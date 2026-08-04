@@ -30,6 +30,10 @@ const socketRooms = new Map(); // socketId -> code
 const timers = new Map(); // code -> timeout (ходы ботов)
 const disconnectTimers = new Map(); // playerId -> timeout (grace на переподключение)
 
+// Накопленные очки игроков (сервер — единственный источник правды: начисляются
+// один раз при завершении партии, refresh не приводит к повторному начислению).
+const cumulativeScores = new Map(); // playerId -> суммарные очки
+
 const MAX_PLAYERS = 4;
 const RECONNECT_GRACE_MS = 8000; // столько ждём игрока после обрыва, прежде чем включить автопилот
 
@@ -120,6 +124,7 @@ function snapshot(room, playerId) {
       name: p.name,
       ai: !!p.ai,
       connected: !!p.connected,
+      total: cumulativeScores.get(p.id) || 0,
     })),
     game: null,
   };
@@ -142,6 +147,7 @@ function snapshot(room, playerId) {
         handCount: p.hand.length,
         melded: p.melded,
         score: p.score || 0,
+        total: cumulativeScores.get(p.id) || 0,
       })),
       you: me
         ? { hand: me.hand, melded: me.melded, drew: g.turnDrew, yourTurn: cur.id === me.id }
@@ -156,6 +162,17 @@ function emitRoom(room) {
     if (!p.socketId) continue;
     const s = io.sockets.sockets.get(p.socketId);
     if (s) s.emit('room', snapshot(room, p.id));
+  }
+}
+
+// Начислить очки завершённой партии в общую копилку ровно один раз за игру.
+function settleGame(room) {
+  const g = room.game;
+  if (!g || g.phase !== 'ended') return;
+  if (room.settledSeq === room.gameSeq) return;
+  room.settledSeq = room.gameSeq;
+  for (const p of g.players) {
+    if (p.score) cumulativeScores.set(p.id, (cumulativeScores.get(p.id) || 0) + p.score);
   }
 }
 
@@ -219,6 +236,7 @@ function addBotToRoom(room, socket) {
 }
 
 function broadcastRoom(room) {
+  settleGame(room);
   emitRoom(room);
 }
 
@@ -346,23 +364,6 @@ io.on('connection', (socket) => {
       room.settings.difficulty
     );
     room.status = 'playing';
-    cb?.({ ok: true });
-    broadcastRoom(room);
-    scheduleAi(room);
-  });
-
-  socket.on('room:restart', (cb) => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    const me = room && getPlayerBySocket(room, socket);
-    if (!room || !me) return cb?.({ ok: false, error: 'Комната не найдена' });
-    if (room.hostId !== me.id) return cb?.({ ok: false, error: 'Только хост' });
-    if (!room.game || room.game.phase !== 'ended') return cb?.({ ok: false, error: 'Игра ещё не окончена' });
-    clearTimer(room);
-    room.gameSeq += 1;
-    room.game = new Game(
-      room.players.map((p) => ({ id: p.id, name: p.name, ai: p.ai })),
-      room.settings.difficulty
-    );
     cb?.({ ok: true });
     broadcastRoom(room);
     scheduleAi(room);

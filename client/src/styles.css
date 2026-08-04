@@ -233,10 +233,11 @@ select option { background: #1a1836; }
   letter-spacing: 3px;
   font-weight: 800;
   text-align: center;
-  flex: 1;
+  flex: 1 1 150px;
+  min-width: 0;
 }
 
-.join-row { display: flex; gap: 10px; }
+.join-row { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .rules-hint { color: var(--text-dim); font-size: 14px; text-align: center; max-width: 460px; line-height: 1.5; }
 
@@ -379,6 +380,45 @@ select option { background: #1a1836; }
   min-height: 0;
   padding: 14px;
   gap: 12px;
+  position: relative;
+}
+
+/* Баннер последнего хода соперника */
+.action-banner {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  color: #cffafe;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  animation: bannerIn 3.2s ease forwards;
+  white-space: nowrap;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.action-banner.mine { border-color: rgba(139, 92, 246, 0.55); color: #ede9fe; }
+@keyframes bannerIn {
+  0% { opacity: 0; transform: translate(-50%, -8px); }
+  10% { opacity: 1; transform: translate(-50%, 0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -6px); }
+}
+
+/* Новая фишка, только что выложенная соперником */
+.tile-new { animation: tilePop 0.7s ease; z-index: 3; }
+@keyframes tilePop {
+  0% { transform: scale(0.4); opacity: 0; }
+  55% { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 /* Стол */
@@ -417,6 +457,7 @@ select option { background: #1a1836; }
 
 .meld {
   position: relative;
+  flex: 0 0 auto;
   background: rgba(255, 255, 255, 0.06);
   border: 1px dashed rgba(255, 255, 255, 0.22);
   border-radius: 16px;
@@ -606,6 +647,7 @@ select option { background: #1a1836; }
 /* Фишки */
 .tile {
   position: relative;
+  flex: 0 0 auto;
   border-radius: 9px;
   background: linear-gradient(180deg, var(--tile-bg-top), var(--tile-bg-bottom));
   box-shadow:
@@ -668,10 +710,42 @@ select option { background: #1a1836; }
 
 @media (max-width: 720px) {
   .logo-text { font-size: 32px; }
-  .tile-lg { width: 42px; height: 56px; }
-  .tile-md { width: 36px; height: 48px; }
+  .tile-lg { width: 40px; height: 54px; }
+  .tile-md { width: 34px; height: 46px; }
   .tile-num { font-size: 18px; }
-  .tile-md .tile-num { font-size: 15px; }
+  .tile-md .tile-num { font-size: 14px; }
   .controls { flex-direction: column; align-items: stretch; }
   .controls-right { margin-left: 0; justify-content: center; }
+
+  /* Компактная шапка: одна строка, чипы игроков скроллятся по горизонтали */
+  .topbar { padding: 8px 10px; gap: 8px; }
+  .topbar-left { gap: 8px; }
+  .logo-mini { font-size: 16px; }
+  .room-code-mini { display: none; }
+  .players-bar {
+    margin-left: auto;
+    max-width: 58vw;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .players-bar::-webkit-scrollbar { display: none; }
+  .player-chip { padding: 3px 8px 3px 3px; gap: 6px; font-size: 12px; }
+  .chip-avatar { width: 22px; height: 22px; font-size: 11px; }
+  .chip-name {
+    max-width: 88px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chip-meta { display: none; }
+
+  /* Стол и рука: меньше отступов, горизонтальный скролл вместо сжатия */
+  .game-body { padding: 10px; gap: 10px; }
+  .board { padding: 12px; }
+  .board-melds { gap: 10px; }
+  .meld { padding: 10px 8px 8px; border-radius: 12px; }
+  .meld-tiles { gap: 4px; }
+  .rack { justify-content: flex-start; padding: 10px; min-height: 82px; }
 }

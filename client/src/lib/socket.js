@@ -1,6 +1,11 @@
 import { io } from 'socket.io-client';
 
-export const socket = io();
+// Адрес бэкенда. По умолчанию — тот же origin (dev-прокси / production-сервер).
+// Для GitHub Pages (клиент отдельно от сервера) задайте при сборке:
+//   VITE_SERVER_URL=https://your-backend.example.com npm run build
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || window.location.origin;
+
+export const socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
 
 const PLAYER_KEY = 'rummi-player-id';
 const SESSION_KEY = 'rummi-session';

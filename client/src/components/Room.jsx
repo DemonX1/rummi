@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { getScore } from '../lib/scores.js';
 
 const DIFFICULTY = {
   easy: 'Лёгкий',
@@ -41,7 +40,7 @@ export default function Room({ snap, meId, actions, onLeave }) {
             <div key={p.id} className={`player-row ${p.id === snap.hostId ? 'host' : ''}`}>
               <span className="player-avatar">{p.name[0]?.toUpperCase()}</span>
               <span className="player-name">{p.name}</span>
-              <span className="badge badge-score">Σ {getScore(p.id)}</span>
+              <span className="badge badge-score">Σ {p.total}</span>
               {p.ai && <span className="badge badge-bot">Бот</span>}
               {p.id === snap.hostId && <span className="badge badge-host">Хост</span>}
               {!p.connected && <span className="badge badge-off">отключён</span>}

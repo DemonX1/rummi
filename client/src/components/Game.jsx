@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Tile from './Tile.jsx';
 import { isValidMeld, sortMeld, tileValue } from '../lib/melds.js';
-import { getScore } from '../lib/scores.js';
 
-export default function Game({ snap, meId, actions }) {
+export default function Game({ snap, meId, actions, onExit }) {
   const game = snap.game;
   const you = game.you;
   const myTurn = game.phase === 'playing' && !!you?.yourTurn;
@@ -13,7 +12,10 @@ export default function Game({ snap, meId, actions }) {
   const [selected, setSelected] = useState(new Set());
   const [moved, setMoved] = useState(new Set());
   const [showScores, setShowScores] = useState(false);
+  const [justPlayed, setJustPlayed] = useState(new Set()); // tileId — новые фишки соперника
+  const [actionBanner, setActionBanner] = useState(null); // { text, key, mine }
   const turnKeyRef = useRef(null);
+  const prevBoardIdsRef = useRef([]);
 
   const turnKey = `${game.phase}:${game.turnIndex}:${you?.yourTurn}`;
 
@@ -25,6 +27,10 @@ export default function Game({ snap, meId, actions }) {
       setHand(you ? you.hand.slice() : []);
       setSelected(new Set());
       setMoved(new Set());
+      if (myTurn) {
+        setJustPlayed(new Set());
+        setActionBanner(null);
+      }
     } else if (!myTurn) {
       setBoard(game.board.map((m) => m.slice()));
       setHand(you ? you.hand.slice() : []);
@@ -33,6 +39,26 @@ export default function Game({ snap, meId, actions }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnKey, game.board, myTurn]);
+
+  // Наблюдение за ходами соперника: подсвечиваем новые фишки и показываем баннер последнего действия
+  useEffect(() => {
+    if (!you || myTurn || game.phase !== 'playing') return;
+
+    const curIds = game.board.flat().map((t) => t.id);
+    const prevSet = new Set(prevBoardIdsRef.current);
+    const added = curIds.filter((id) => !prevSet.has(id));
+    if (added.length) {
+      setJustPlayed((prev) => new Set([...prev, ...added]));
+    }
+    prevBoardIdsRef.current = curIds;
+
+    const last = game.log && game.log[game.log.length - 1];
+    if (last && isActionLine(last)) {
+      const myName = (game.players.find((p) => p.id === meId) || {}).name || '';
+      setActionBanner({ text: last, key: game.log.length, mine: !!myName && last.includes(myName) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.log, game.board, myTurn]);
 
   const toggleSelect = (id) => {
     if (!myTurn) return;
@@ -124,6 +150,11 @@ export default function Game({ snap, meId, actions }) {
       <TopBar game={game} snap={snap} meId={meId} onOpenScores={() => setShowScores(true)} onEndGame={endGame} />
 
       <div className="game-body">
+        {actionBanner && (
+          <div key={actionBanner.key} className={`action-banner ${actionBanner.mine ? 'mine' : ''}`}>
+            {actionBanner.text}
+          </div>
+        )}
         <div className="board">
           <BoardRegion
             board={board}
@@ -131,13 +162,14 @@ export default function Game({ snap, meId, actions }) {
             selected={selected}
             onTile={toggleSelect}
             onAddToMeld={addToMeld}
+            justPlayed={justPlayed}
           />
           <OpponentHands game={game} meId={meId} />
         </div>
 
         <div className="control-strip">
           {game.phase === 'ended' ? (
-            <EndPanel game={game} snap={snap} meId={meId} onRestart={actions.restart} />
+            <EndPanel game={game} meId={meId} onExit={onExit} />
           ) : myTurn ? (
             <Controls
               canDraw={moved.size === 0}
@@ -241,8 +273,8 @@ function TopBar({ game, snap, meId, onOpenScores, onEndGame }) {
               <span className="chip-name">{p.name}{p.id === meId ? ' (вы)' : ''}</span>
               <span className="chip-meta">
                 {game.phase === 'ended'
-                  ? `Очки: ${p.score > 0 ? '+' : ''}${p.score} · Σ ${getScore(p.id)}`
-                  : `${p.handCount} ф. · Σ ${getScore(p.id)}`}
+                  ? `Очки: ${p.score > 0 ? '+' : ''}${p.score} · Σ ${p.total}`
+                  : `${p.handCount} ф. · Σ ${p.total}`}
               </span>
             </div>
           );
@@ -265,7 +297,7 @@ function Scoreboard({ game, onClose }) {
               <span className="score-cell">
                 за партию: {p.score > 0 ? `+${p.score}` : p.score}
               </span>
-              <span className="score-cell score-total">Σ накоплено: {getScore(p.id)}</span>
+              <span className="score-cell score-total">Σ накоплено: {p.total}</span>
             </div>
           ))}
         </div>
@@ -275,7 +307,11 @@ function Scoreboard({ game, onClose }) {
   );
 }
 
-function BoardRegion({ board, myTurn, selected, onTile, onAddToMeld }) {
+function isActionLine(line) {
+  return !/^(Ходит |Игра началась|Игра окончена|Победитель)/.test(line);
+}
+
+function BoardRegion({ board, myTurn, selected, onTile, onAddToMeld, justPlayed }) {
   if (board.length === 0) {
     return (
       <div className="board-empty">
@@ -312,6 +348,7 @@ function BoardRegion({ board, myTurn, selected, onTile, onAddToMeld }) {
                   dimmed={!myTurn}
                   selected={selected.has(t.id)}
                   onClick={() => onTile(t.id)}
+                  className={justPlayed.has(t.id) ? 'tile-new' : undefined}
                 />
               ))}
             </div>
@@ -370,24 +407,21 @@ function Controls({
   );
 }
 
-function EndPanel({ game, snap, meId, onRestart }) {
+function EndPanel({ game, meId, onExit }) {
   const winner = game.players.find((p) => p.id === game.winnerId);
-  const isHost = snap.hostId === meId;
   return (
     <div className="controls end-panel">
       <div className="end-title">Победил {winner ? winner.name : '…'}!</div>
       <div className="end-scores">
         {game.players.map((p) => (
           <span key={p.id} className={p.id === game.winnerId ? 'win' : ''}>
-            {p.name}: {p.score > 0 ? `+${p.score}` : p.score} · Σ {getScore(p.id)}
+            {p.name}: {p.score > 0 ? `+${p.score}` : p.score} · Σ {p.total}
           </span>
         ))}
       </div>
-      {isHost && (
-        <button className="btn btn-primary" onClick={onRestart}>
-          Играть ещё
-        </button>
-      )}
+      <button className="btn btn-primary" onClick={onExit}>
+        Выйти в меню
+      </button>
     </div>
   );
 }

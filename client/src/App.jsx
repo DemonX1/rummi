@@ -10,7 +10,6 @@ import {
   saveSession,
   clearSession,
 } from './lib/socket.js';
-import { addGameScores, wasApplied, markApplied } from './lib/scores.js';
 
 export default function App() {
   const [snap, setSnap] = useState(null);
@@ -28,11 +27,6 @@ export default function App() {
   useEffect(() => {
     socket.on('room', (s) => {
       setSnap(s);
-      // Начислить накопленные очки один раз за завершённую партию
-      if (s?.game?.phase === 'ended' && s.game.gameId && !wasApplied(s.game.gameId)) {
-        addGameScores(s.game.players);
-        markApplied(s.game.gameId);
-      }
     });
     socket.on('error', showToast);
 
@@ -52,10 +46,16 @@ export default function App() {
 
   const actions = useMemoActions(showToast, meId);
 
+  const exitToHome = useCallback(async () => {
+    await actions.leave();
+    clearSession();
+    setSnap(null);
+  }, [actions]);
+
   if (snap?.game) {
     return (
       <>
-        <Game snap={snap} meId={meId} actions={actions} />
+        <Game snap={snap} meId={meId} actions={actions} onExit={exitToHome} />
         <Toast msg={toast} />
       </>
     );
@@ -64,15 +64,7 @@ export default function App() {
   if (snap?.code) {
     return (
       <>
-        <Room
-          snap={snap}
-          meId={meId}
-          actions={actions}
-          onLeave={() => {
-            clearSession();
-            setSnap(null);
-          }}
-        />
+        <Room snap={snap} meId={meId} actions={actions} onLeave={exitToHome} />
         <Toast msg={toast} />
       </>
     );
@@ -122,10 +114,6 @@ function useMemoActions(showToast, meId) {
       },
       async start() {
         const res = await emit('room:start');
-        if (!res?.ok) showToast(res?.error);
-      },
-      async restart() {
-        const res = await emit('room:restart');
         if (!res?.ok) showToast(res?.error);
       },
       async play(board) {
