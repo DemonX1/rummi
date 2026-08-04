@@ -1,0 +1,21 @@
+{
+  "name": "rummikub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Многопользовательская игра «Румикуб» — React + Node.js (Socket.io), с ботами",
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "node server/src/index.js",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "start": "node server/src/index.js",
+    "postinstall": "npm --prefix client install",
+    "check": "npm run build && node server/test/run-tests.mjs"
+  },
+  "dependencies": {
+    "concurrently": "^9.0.1",
+    "express": "^4.21.1",
+    "socket.io": "^4.8.1"
+  }
+}
