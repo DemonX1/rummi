@@ -27,8 +27,12 @@ NODE_ENV=production PORT=3001 node server/src/index.js
 
 ```bash
 docker build -t rummikub .
-docker run -d -p 3001:3001 -e PORT=3001 rummikub
+docker run -d -p 3001:3001 -e PORT=3001 -v rummikub-data:/app/server/data rummikub
 ```
+
+**Важно:** том `rummikub-data` хранит таблицу лидеров и профили игроков
+(`/app/server/data/players.json`). Без него очки сбрасываются при пересоздании контейнера.
+Если том не нужен (перезапуск с сохранением очков не планируется), флаг `-v` можно опустить.
 
 После запуска откройте в браузере `http://<адрес сервера>:3001`. Друзья подключаются по этому же адресу. Снаружи нужен только порт 3001 (http + WebSocket в одном месте). Для публичного доступа рекомендуется reverse-proxy с HTTPS (nginx/caddy) поверх 3001.
 
@@ -36,6 +40,7 @@ docker run -d -p 3001:3001 -e PORT=3001 rummikub
 
 - `PORT` — порт сервера (по умолчанию `3001`).
 - `NODE_ENV=production` — включать раздачу собранного клиента из `client/dist`.
+- `PLAYERS_FILE` — путь к файлу таблицы лидеров (по умолчанию `server/data/players.json`, в Docker — `/app/server/data/players.json`).
 
 ## Проверки
 

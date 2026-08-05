@@ -24,13 +24,18 @@ npm run check          # собрать клиент + прогнать логи
 Деплой (любой вариант):
 
 ```bash
-# Вариант 1: Docker
+# Вариант 1: Docker (том обязателен для сохранения таблицы лидеров)
 docker build -t rummikub .
-docker run -p 3001:3001 -e PORT=3001 rummikub
+docker run -p 3001:3001 -e PORT=3001 -v rummikub-data:/app/server/data rummikub
 
 # Вариант 2: Node напрямую
 npm ci && npm run build && NODE_ENV=production PORT=3001 node server/src/index.js
 ```
+
+**Таблица лидеров и профили игроков хранятся на сервере в JSON-файле**
+(`server/data/players.json`, путь меняется через `PLAYERS_FILE`). В Docker каталог
+объявлен как `VOLUME /app/server/data` — без смонтированного тома очки сбрасываются
+при пересоздании контейнера. Файл в .gitignore и в репозиторий не попадает.
 
 Друзья подключаются по `http://<адрес сервера>:3001`. Снаружи достаточно открыть один порт (http + WebSocket). Для публичного сервера желателен reverse-proxy с TLS (WebSocket работает поверх http).
 
@@ -140,7 +145,8 @@ Dockerfile                  сборка и запуск в контейнере
 ## Очки
 
 - **За партию** (`game.players[].score`) считает сервер при завершении (победа/досрочно) и отдаёт в снимке.
-- **Накопленные очки** начисляет сервер при завершении партии (однократно за `gameId`, `settleGame()` в `server/src/index.js`) в общую копилку `cumulativeScores` и отдаёт каждому игроку в снимке как `players[].total` (и в лобби, и в игре). Клиент только отображает `p.total` — refresh/повторный снимок не приводят к повторному начислению.
+- **Накопленные очки** начисляет сервер при завершении партии (однократно за `gameId`, `settleGame()` в `server/src/index.js`) в постоянное хранилище `players.json` (модуль `server/src/game/players.js`) и отдаёт каждому игроку в снимке как `players[].total` (и в лобби, и в игре). Клиент только отображает `p.total` — refresh/повторный снимок не приводят к повторному начислению.
+- **Вход по тому же id** (`room:create`/`room:join`/`room:rejoin`) вызывает `loginPlayer()`: сохранённые очки и аватарка подгружаются с сервера; аватарка обновляется, только если клиент пометил её как изменённую (`touched`).
 
 ## Проверки перед сдачей изменений
 
@@ -157,6 +163,7 @@ npm run build                    # клиент собирается
 - **Поведение ботов** → `server/src/game/ai.js` (уровни сложности — в `aiDecision`, `passChance`).
 - **Новые экраны/элементы UI** → `client/src/components/`, разметка в JSX, стили в `styles.css`.
 - **Новые события/данные снимка** → обработчики в `server/src/index.js` + `snapshot()`, эмиты в `client/src/lib/socket.js` и `App.jsx`.
+- **Таблица лидеров / профили игроков** → `server/src/game/players.js` (JSON-хранилище, `loginPlayer`/`addScore`/`leaderboard`), вызовы из `server/src/index.js`.
 - **Развёртывание** → `Dockerfile`, скрипты в корневом `package.json`.
 
 ## Известные упрощения (не «баги», осознанный scope)

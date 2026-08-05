@@ -10,6 +10,7 @@ import {
   saveSession,
   clearSession,
   getProfile,
+  syncProfileFromServer,
 } from './lib/socket.js';
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
       name: sess.name || 'Игрок',
       color: prof.color,
       emoji: prof.emoji,
+      touched: prof.touched,
     }).then((res) => {
       if (!res?.ok) clearSession();
     });
@@ -97,20 +99,28 @@ function useMemoActions(showToast, meId) {
     {
       async create(name, addBot) {
         const prof = getProfile();
-        const res = await emit('room:create', { id: meId, name, addBot, color: prof.color, emoji: prof.emoji });
+        const res = await emit('room:create', {
+          id: meId, name, addBot, color: prof.color, emoji: prof.emoji, touched: prof.touched,
+        });
         if (!res?.ok) {
           showToast(res?.error || 'Не удалось создать комнату');
           return;
         }
+        const me = res.snapshot.players.find((p) => p.id === meId);
+        if (me) syncProfileFromServer(me.color, me.emoji);
         saveSession(res.snapshot.code, name.trim());
       },
       async join(code, name) {
         const prof = getProfile();
-        const res = await emit('room:join', { code, name, id: meId, color: prof.color, emoji: prof.emoji });
+        const res = await emit('room:join', {
+          code, name, id: meId, color: prof.color, emoji: prof.emoji, touched: prof.touched,
+        });
         if (!res?.ok) {
           showToast(res?.error || 'Не удалось присоединиться');
           return;
         }
+        const me = res.snapshot.players.find((p) => p.id === meId);
+        if (me) syncProfileFromServer(me.color, me.emoji);
         saveSession(res.snapshot.code, name.trim());
       },
       async leave() {

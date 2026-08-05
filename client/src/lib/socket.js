@@ -38,21 +38,37 @@ export function clearSession() {
 }
 
 // Профиль игрока: цвет и смайлик-аватарка (звери). Переживает обновление страницы.
+// Источник правды для постоянных данных — сервер (players.json); localStorage —
+// лишь кэш выбранного в этой сессии. «touched» = игрок менял аватарку сейчас.
 const PROFILE_KEY = 'rummi-profile';
 export const PLAYER_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899'];
 export const PLAYER_EMOJIS = ['🐶', '🐱', '🦊', '🐻', '🐼', '🦁', '🐸', '🐵', '🦉', '🐺'];
 const DEFAULT_PROFILE = { color: PLAYER_COLORS[3], emoji: PLAYER_EMOJIS[0] };
+let profileTouched = false;
 
 export function getProfile() {
   try {
-    return { ...DEFAULT_PROFILE, ...(JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')) };
+    const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
+    return { ...DEFAULT_PROFILE, ...saved, touched: profileTouched };
   } catch {
-    return DEFAULT_PROFILE;
+    return { ...DEFAULT_PROFILE, touched: profileTouched };
   }
 }
 
 export function saveProfile(profile) {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  localStorage.setItem(PROFILE_KEY, JSON.stringify({ color: profile.color, emoji: profile.emoji }));
+}
+
+// Игрок вручную изменил аватарку в этой сессии — сервер должен обновить запись.
+export function markProfileTouched() {
+  profileTouched = true;
+}
+
+// Сервер вернул сохранённый профиль (тот же логин): подхватываем его,
+// если игрок сам ничего не менял. Так данные приходят с сервера, а не с устройства.
+export function syncProfileFromServer(color, emoji) {
+  if (profileTouched) return;
+  localStorage.setItem(PROFILE_KEY, JSON.stringify({ color, emoji }));
 }
 
 export function emit(event, payload) {

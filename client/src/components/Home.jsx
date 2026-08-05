@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PLAYER_COLORS, PLAYER_EMOJIS, getProfile, saveProfile } from '../lib/socket.js';
+import { PLAYER_COLORS, PLAYER_EMOJIS, getProfile, saveProfile, markProfileTouched } from '../lib/socket.js';
 
 export default function Home({ meId, actions }) {
   const [name, setName] = useState(localStorage.getItem('rummi-name') || '');
@@ -13,6 +13,7 @@ export default function Home({ meId, actions }) {
   };
 
   const updateProfile = (patch) => {
+    markProfileTouched();
     const next = { ...profile, ...patch };
     setProfile(next);
     saveProfile(next);
