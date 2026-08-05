@@ -105,6 +105,8 @@ const g8 = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'p2', name: 
 g8.players[0].hand = [tile('R11', 'R', 11), tile('R12', 'R', 12), tile('R13', 'R', 13), tile('B5', 'B', 5)];
 const r8 = g8.play('p1', [[tile('R11', 'R', 11), tile('R12', 'R', 12), tile('R13', 'R', 13)]]);
 check('первая выкладка ок', r8.ok, true);
+check('played фиксирует выложенные фишки', g8.played.get('p1')?.length === 3, true);
+check('played хранит одного игрока', [...g8.played.keys()].join(','), 'p1');
 // ход теперь у бота — не можем ничего менять; просто убедимся что бот-ход работает дальше
 check('игра продолжается', g8.phase, 'playing');
 

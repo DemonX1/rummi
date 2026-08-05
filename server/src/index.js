@@ -165,6 +165,19 @@ function snapshot(room, playerId) {
       stockCount: g.stock.length,
       log: g.log.slice(-10),
       difficulty: g.difficulty,
+      played: g.played
+        ? [...g.played].map(([pid, tileIds]) => {
+            const p = g.getPlayer(pid);
+            if (!p || !tileIds.length) return null;
+            return {
+              id: pid,
+              name: p.name,
+              color: p.color || DEFAULT_COLOR,
+              emoji: p.emoji || DEFAULT_EMOJI,
+              tileIds,
+            };
+          }).filter(Boolean)
+        : [],
       players: g.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -236,6 +249,10 @@ function scheduleAi(room) {
 
     const decision = aiDecision(g);
     if (decision) {
+      const prevIds = new Set(g.board.flat().map((t) => t.id));
+      const newIds = decision.board.flat().map((t) => t.id);
+      const placed = [...new Set(newIds)].filter((id) => !prevIds.has(id));
+      g.played.set(cur.id, placed);
       cur.hand = decision.hand;
       cur.melded = decision.melded;
       g.board = decision.board;

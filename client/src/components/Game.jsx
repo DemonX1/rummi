@@ -12,10 +12,8 @@ export default function Game({ snap, meId, actions, onExit }) {
   const [selected, setSelected] = useState(new Set());
   const [moved, setMoved] = useState(new Set());
   const [showScores, setShowScores] = useState(false);
-  const [justPlayed, setJustPlayed] = useState(new Set()); // tileId — новые фишки соперника
   const [actionBanner, setActionBanner] = useState(null); // { text, key, mine }
   const turnKeyRef = useRef(null);
-  const prevBoardIdsRef = useRef([]);
 
   const turnKey = `${game.phase}:${game.turnIndex}:${you?.yourTurn}`;
 
@@ -28,7 +26,6 @@ export default function Game({ snap, meId, actions, onExit }) {
       setSelected(new Set());
       setMoved(new Set());
       if (myTurn) {
-        setJustPlayed(new Set());
         setActionBanner(null);
       }
     } else if (!myTurn) {
@@ -40,17 +37,9 @@ export default function Game({ snap, meId, actions, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnKey, game.board, myTurn]);
 
-  // Наблюдение за ходами соперника: подсвечиваем новые фишки и показываем баннер последнего действия
+  // Баннер последнего действия соперника
   useEffect(() => {
     if (!you || myTurn || game.phase !== 'playing') return;
-
-    const curIds = game.board.flat().map((t) => t.id);
-    const prevSet = new Set(prevBoardIdsRef.current);
-    const added = curIds.filter((id) => !prevSet.has(id));
-    if (added.length) {
-      setJustPlayed((prev) => new Set([...prev, ...added]));
-    }
-    prevBoardIdsRef.current = curIds;
 
     const last = game.log && game.log[game.log.length - 1];
     if (last && isActionLine(last)) {
@@ -58,7 +47,14 @@ export default function Game({ snap, meId, actions, onExit }) {
       setActionBanner({ text: last, key: game.log.length, mine: !!myName && last.includes(myName) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.log, game.board, myTurn]);
+  }, [game.log, myTurn]);
+
+  // Последние выложенные фишки каждого игрока (кто что выложил в своём последнем ходу)
+  const played = game.phase === 'playing' ? (game.played || []) : [];
+  const ownerByTile = new Map();
+  for (const entry of played) {
+    for (const id of entry.tileIds) ownerByTile.set(id, entry);
+  }
 
   const toggleSelect = (id) => {
     if (!myTurn) return;
@@ -162,7 +158,7 @@ export default function Game({ snap, meId, actions, onExit }) {
             selected={selected}
             onTile={toggleSelect}
             onAddToMeld={addToMeld}
-            justPlayed={justPlayed}
+                        ownerByTile={ownerByTile}
           />
           <OpponentHands game={game} meId={meId} />
         </div>
@@ -319,7 +315,7 @@ function isActionLine(line) {
   return !/^(Ходит |Игра началась|Игра окончена|Победитель)/.test(line);
 }
 
-function BoardRegion({ board, myTurn, selected, onTile, onAddToMeld, justPlayed }) {
+function BoardRegion({ board, myTurn, selected, onTile, onAddToMeld, ownerByTile }) {
   if (board.length === 0) {
     return (
       <div className="board-empty">
@@ -348,17 +344,30 @@ function BoardRegion({ board, myTurn, selected, onTile, onAddToMeld, justPlayed 
               </button>
             )}
             <div className="meld-tiles">
-              {sorted.map((t) => (
-                <Tile
-                  key={t.id}
-                  tile={t}
-                  size="md"
-                  dimmed={!myTurn}
-                  selected={selected.has(t.id)}
-                  onClick={() => onTile(t.id)}
-                  className={justPlayed.has(t.id) ? 'tile-new' : undefined}
-                />
-              ))}
+              {sorted.map((t) => {
+                const owner = ownerByTile.get(t.id);
+                return (
+                  <div key={t.id} className="tile-cell">
+                    <Tile
+                      tile={t}
+                      size="md"
+                      dimmed={!myTurn}
+                      selected={selected.has(t.id)}
+                      onClick={() => onTile(t.id)}
+                      className={owner ? 'tile-new' : undefined}
+                    />
+                    {owner && (
+                      <span
+                        className="tile-owner"
+                        style={{ background: owner.color }}
+                        title={`${owner.name} выложил фишку`}
+                      >
+                        {owner.emoji}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             {!valid && <span className="meld-bad">некорректная группа</span>}
           </div>

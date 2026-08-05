@@ -37,6 +37,7 @@ export class Game {
     this.turnDrew = false;
     this.phase = 'playing'; // 'playing' | 'ended'
     this.winner = null;
+    this.played = new Map(); // playerId -> tileIds, выложенные в его последнем ходе (хранятся, пока игрок не сыграет новые)
     this.log = [`Игра началась. Ходит ${this.players[0].name}.`];
   }
 
@@ -158,6 +159,7 @@ export class Game {
     player.hand = player.hand.filter((t) => !deltaSet.has(t.id));
     player.melded = true;
     this.board = board;
+    this.played.set(player.id, deltaIds);
     this.log.push(`${player.name} выложил фишки на стол.`);
 
     if (player.hand.length === 0) {

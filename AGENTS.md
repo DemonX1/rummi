@@ -109,6 +109,7 @@ Dockerfile                  сборка и запуск в контейнере
     phase: 'playing'|'ended', winnerId, turnIndex, gameId,
     board: Tile[][],            // группы на столе
     stockCount, log: string[],
+    played: [{ id, name, color, emoji, tileIds: number[] }], // последние выложенные фишки каждого игрока (хранятся, пока игрок не сыграет новые)
     players: [{ id, name, ai, color, emoji, handCount, melded, score, total }],
     you: { hand: Tile[], melded, drew, yourTurn } | null,
   }
