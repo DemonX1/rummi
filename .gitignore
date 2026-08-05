@@ -4,3 +4,6 @@ client/dist/
 .env
 .DS_Store
 server/data/
+
+# Архивы образов (make save)
+*.tar.gz
