@@ -9,6 +9,7 @@ import {
   getSession,
   saveSession,
   clearSession,
+  getProfile,
 } from './lib/socket.js';
 
 export default function App() {
@@ -29,7 +30,14 @@ export default function App() {
   const tryRejoin = useCallback(() => {
     const sess = getSession();
     if (!sess?.code) return;
-    emit('room:rejoin', { code: sess.code, id: meId, name: sess.name || 'Игрок' }).then((res) => {
+    const prof = getProfile();
+    emit('room:rejoin', {
+      code: sess.code,
+      id: meId,
+      name: sess.name || 'Игрок',
+      color: prof.color,
+      emoji: prof.emoji,
+    }).then((res) => {
       if (!res?.ok) clearSession();
     });
   }, [meId]);
@@ -88,7 +96,8 @@ function useMemoActions(showToast, meId) {
   return useCallback(
     {
       async create(name, addBot) {
-        const res = await emit('room:create', { id: meId, name, addBot });
+        const prof = getProfile();
+        const res = await emit('room:create', { id: meId, name, addBot, color: prof.color, emoji: prof.emoji });
         if (!res?.ok) {
           showToast(res?.error || 'Не удалось создать комнату');
           return;
@@ -96,7 +105,8 @@ function useMemoActions(showToast, meId) {
         saveSession(res.snapshot.code, name.trim());
       },
       async join(code, name) {
-        const res = await emit('room:join', { code, name, id: meId });
+        const prof = getProfile();
+        const res = await emit('room:join', { code, name, id: meId, color: prof.color, emoji: prof.emoji });
         if (!res?.ok) {
           showToast(res?.error || 'Не удалось присоединиться');
           return;

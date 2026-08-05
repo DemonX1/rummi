@@ -37,6 +37,24 @@ export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
+// Профиль игрока: цвет и смайлик-аватарка (звери). Переживает обновление страницы.
+const PROFILE_KEY = 'rummi-profile';
+export const PLAYER_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899'];
+export const PLAYER_EMOJIS = ['🐶', '🐱', '🦊', '🐻', '🐼', '🦁', '🐸', '🐵', '🦉', '🐺'];
+const DEFAULT_PROFILE = { color: PLAYER_COLORS[3], emoji: PLAYER_EMOJIS[0] };
+
+export function getProfile() {
+  try {
+    return { ...DEFAULT_PROFILE, ...(JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')) };
+  } catch {
+    return DEFAULT_PROFILE;
+  }
+}
+
+export function saveProfile(profile) {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
 export function emit(event, payload) {
   return new Promise((resolve) => {
     if (payload === undefined) {

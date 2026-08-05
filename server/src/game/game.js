@@ -23,6 +23,8 @@ export class Game {
       id: p.id,
       name: p.name,
       ai: !!p.ai,
+      color: p.color,
+      emoji: p.emoji,
       connected: true,
       hand: deck.splice(0, HAND_SIZE),
       melded: false, // выложил ли первую комбинацию на 30+ очков

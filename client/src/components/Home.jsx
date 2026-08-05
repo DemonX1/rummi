@@ -1,13 +1,21 @@
 import React, { useState } from 'react';
+import { PLAYER_COLORS, PLAYER_EMOJIS, getProfile, saveProfile } from '../lib/socket.js';
 
 export default function Home({ meId, actions }) {
   const [name, setName] = useState(localStorage.getItem('rummi-name') || '');
   const [code, setCode] = useState('');
+  const [profile, setProfile] = useState(getProfile());
   const [leaders, setLeaders] = useState(null);
 
   const saveName = (n) => {
     setName(n);
     localStorage.setItem('rummi-name', n);
+  };
+
+  const updateProfile = (patch) => {
+    const next = { ...profile, ...patch };
+    setProfile(next);
+    saveProfile(next);
   };
 
   const submit = (fn) => {
@@ -44,6 +52,35 @@ export default function Home({ meId, actions }) {
             onChange={(e) => saveName(e.target.value)}
           />
         </label>
+
+        <div className="profile-picker">
+          <span className="profile-label">Цвет</span>
+          <div className="color-row">
+            {PLAYER_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`color-swatch ${profile.color === c ? 'active' : ''}`}
+                style={{ background: c }}
+                title={c}
+                onClick={() => updateProfile({ color: c })}
+              />
+            ))}
+          </div>
+          <span className="profile-label">Аватарка</span>
+          <div className="emoji-row">
+            {PLAYER_EMOJIS.map((e) => (
+              <button
+                key={e}
+                type="button"
+                className={`emoji-pick ${profile.emoji === e ? 'active' : ''}`}
+                onClick={() => updateProfile({ emoji: e })}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <button
           className="btn btn-primary btn-lg"
@@ -103,6 +140,9 @@ export default function Home({ meId, actions }) {
                     className={`score-row ${row.id === meId ? 'me' : ''}`}
                   >
                     <span className="leader-rank">#{i + 1}</span>
+                    <span className="leader-avatar" style={{ background: row.color || '#7c3aed' }}>
+                      {row.emoji || row.name[0]?.toUpperCase()}
+                    </span>
                     <span className="score-name">{row.name}</span>
                     <span className="score-cell score-total">{row.score}</span>
                   </div>

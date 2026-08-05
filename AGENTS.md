@@ -76,9 +76,9 @@ Dockerfile                  сборка и запуск в контейнере
 
 Клиент → сервер (с ack-колбэком `{ok, error?, ...}`):
 
-- `room:create {id, name, addBot, difficulty}` — создать комнату (host).
-- `room:join {code, name, id}` — присоединиться по коду.
-- `room:rejoin {code, id, name}` — восстановить сессию после обновления страницы (всегда передаётся при загрузке, если сохранена сессия).
+- `room:create {id, name, addBot, difficulty, color, emoji}` — создать комнату (host).
+- `room:join {code, name, id, color, emoji}` — присоединиться по коду.
+- `room:rejoin {code, id, name, color, emoji}` — восстановить сессию после обновления страницы (всегда передаётся при загрузке, если сохранена сессия).
 - `room:addBot` / `room:removeBot botId` / `room:setDifficulty d` — управление комнатой (host, только в лобби).
 - `room:start` — начать игру (host, минимум 2 игрока).
 - `game:play {board}` — применить итоговую расстановку стола.
@@ -104,12 +104,12 @@ Dockerfile                  сборка и запуск в контейнере
 {
   code, status: 'lobby'|'playing', hostId,
   settings: { difficulty },
-  players: [{ id, name, ai, connected }],
+  players: [{ id, name, ai, color, emoji, connected }],
   game: null | {
     phase: 'playing'|'ended', winnerId, turnIndex, gameId,
     board: Tile[][],            // группы на столе
     stockCount, log: string[],
-    players: [{ id, name, ai, handCount, melded, score, total }],
+    players: [{ id, name, ai, color, emoji, handCount, melded, score, total }],
     you: { hand: Tile[], melded, drew, yourTurn } | null,
   }
 }
@@ -118,6 +118,10 @@ Dockerfile                  сборка и запуск в контейнере
 `gameId` — монотонно растущий номер партии в комнате.
 
 `Tile = { id: number, color: 'R'|'B'|'K'|'Y'|'JOKER', value: 1..13|0 }`.
+
+**Профиль игрока:** `color` (hex из палитры) и `emoji` (зверь из списка) клиент хранит
+в localStorage (`rummi-profile`) и передаёт при create/join/rejoin; сервер валидирует
+по белому списку (палитры в `server/src/index.js`), боты получают цвет/смайл автоматически.
 
 **Как работают ходы:** на клиенте во время своего хода игрок свободно редактирует локальную копию стола (клик по фишке = выбор; «Новая группа», «+» на группе, «Сброс»). При «Сыграть» отправляется итоговый `board`, сервер валидирует целиком и рассылает новый снимок всем. Сервер **не** валидирует промежуточные манипуляции — только финальное состояние.
 

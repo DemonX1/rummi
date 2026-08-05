@@ -38,7 +38,9 @@ export default function Room({ snap, meId, actions, onLeave }) {
         <div className="players-list">
           {snap.players.map((p) => (
             <div key={p.id} className={`player-row ${p.id === snap.hostId ? 'host' : ''}`}>
-              <span className="player-avatar">{p.name[0]?.toUpperCase()}</span>
+              <span className="player-avatar" style={{ background: p.color || '#7c3aed' }}>
+                {p.emoji || p.name[0]?.toUpperCase()}
+              </span>
               <span className="player-name">{p.name}</span>
               <span className="badge badge-score">Σ {p.total}</span>
               {p.ai && <span className="badge badge-bot">Бот</span>}

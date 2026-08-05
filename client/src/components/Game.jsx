@@ -275,7 +275,9 @@ function TopBar({ game, snap, meId, onOpenScores, onEndGame }) {
           const isTurn = game.turnIndex === i && game.phase === 'playing';
           return (
             <div key={p.id} className={`player-chip ${isTurn ? 'turn' : ''} ${p.id === meId ? 'me' : ''}`}>
-              <span className="chip-avatar">{p.name[0]?.toUpperCase()}</span>
+              <span className="chip-avatar" style={{ background: p.color || '#7c3aed' }}>
+                {p.emoji || p.name[0]?.toUpperCase()}
+              </span>
               <span className="chip-name">{p.name}{p.id === meId ? ' (вы)' : ''}</span>
               <span className="chip-meta">
                 {game.phase === 'ended'

@@ -34,9 +34,31 @@ const disconnectTimers = new Map(); // playerId -> timeout (grace на пере�
 // один раз при завершении партии, refresh не приводит к повторному начислению).
 const cumulativeScores = new Map(); // playerId -> суммарные очки
 const playerNames = new Map(); // playerId -> последний известный ник (для таблицы лидеров)
+const playerProfiles = new Map(); // playerId -> { color, emoji } последний профиль (для аватарок в лейдерборде)
 
 const MAX_PLAYERS = 4;
 const RECONNECT_GRACE_MS = 8000; // столько ждём игрока после обрыва, прежде чем включить автопилот
+
+// Кастомизация профиля игрока: цвет и смайлик-аватарка (звери).
+const PLAYER_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899'];
+const PLAYER_EMOJIS = ['🐶', '🐱', '🦊', '🐻', '🐼', '🦁', '🐸', '🐵', '🦉', '🐺'];
+const DEFAULT_COLOR = PLAYER_COLORS[3];
+const DEFAULT_EMOJI = PLAYER_EMOJIS[0];
+
+function sanitizeColor(c) {
+  return PLAYER_COLORS.includes(c) ? c : DEFAULT_COLOR;
+}
+
+function sanitizeEmoji(e) {
+  return PLAYER_EMOJIS.includes(e) ? e : DEFAULT_EMOJI;
+}
+
+function botProfile(room) {
+  return {
+    color: PLAYER_COLORS[room.players.length % PLAYER_COLORS.length],
+    emoji: PLAYER_EMOJIS[(room.players.length + 1) % PLAYER_EMOJIS.length],
+  };
+}
 
 function randCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -124,6 +146,8 @@ function snapshot(room, playerId) {
       id: p.id,
       name: p.name,
       ai: !!p.ai,
+      color: p.color || DEFAULT_COLOR,
+      emoji: p.emoji || DEFAULT_EMOJI,
       connected: !!p.connected,
       total: cumulativeScores.get(p.id) || 0,
     })),
@@ -145,6 +169,8 @@ function snapshot(room, playerId) {
         id: p.id,
         name: p.name,
         ai: !!p.ai,
+        color: p.color || DEFAULT_COLOR,
+        emoji: p.emoji || DEFAULT_EMOJI,
         handCount: p.hand.length,
         melded: p.melded,
         score: p.score || 0,
@@ -175,7 +201,13 @@ function settleGame(room) {
   for (const p of g.players) {
     if (p.score) {
       cumulativeScores.set(p.id, (cumulativeScores.get(p.id) || 0) + p.score);
-      if (!p.ai) playerNames.set(p.id, p.name);
+      if (!p.ai) {
+        playerNames.set(p.id, p.name);
+        playerProfiles.set(p.id, {
+          color: p.color || DEFAULT_COLOR,
+          emoji: p.emoji || DEFAULT_EMOJI,
+        });
+      }
     }
   }
 }
@@ -236,6 +268,7 @@ function addBotToRoom(room, socket) {
     ai: true,
     socketId: null,
     connected: true,
+    ...botProfile(room),
   });
 }
 
@@ -246,7 +279,7 @@ function broadcastRoom(room) {
 
 // --- Socket.io ---
 io.on('connection', (socket) => {
-  socket.on('room:create', ({ id, name, addBot, difficulty } = {}, cb) => {
+  socket.on('room:create', ({ id, name, addBot, difficulty, color, emoji } = {}, cb) => {
     const code = randCode();
     const pid = sanitizeId(id);
     const player = {
@@ -254,6 +287,8 @@ io.on('connection', (socket) => {
       socketId: socket.id,
       name: String(name || 'Игрок').slice(0, 20),
       ai: false,
+      color: sanitizeColor(color),
+      emoji: sanitizeEmoji(emoji),
       connected: true,
     };
     const room = {
@@ -273,7 +308,7 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
   });
 
-  socket.on('room:join', ({ code, name, id } = {}, cb) => {
+  socket.on('room:join', ({ code, name, id, color, emoji } = {}, cb) => {
     const room = rooms.get(String(code || '').trim().toUpperCase());
     if (!room) return cb?.({ ok: false, error: 'Комната не найдена' });
     if (room.status !== 'lobby') return cb?.({ ok: false, error: 'Игра уже началась' });
@@ -282,6 +317,8 @@ io.on('connection', (socket) => {
     const existing = room.players.find((p) => p.id === pid && !p.ai);
     if (existing) {
       // Игрок с таким же id уже в комнате (например, обновил страницу) — просто переподключаем
+      existing.color = sanitizeColor(color);
+      existing.emoji = sanitizeEmoji(emoji);
       rejoinPlayer(room, existing, socket);
       socketRooms.set(socket.id, room.code);
       socket.join(room.code);
@@ -297,6 +334,8 @@ io.on('connection', (socket) => {
       socketId: socket.id,
       name: String(name || 'Игрок').slice(0, 20),
       ai: false,
+      color: sanitizeColor(color),
+      emoji: sanitizeEmoji(emoji),
       connected: true,
     };
     room.players.push(player);
@@ -307,12 +346,14 @@ io.on('connection', (socket) => {
   });
 
   // Восстановление сессии после обновления страницы
-  socket.on('room:rejoin', ({ code, id, name } = {}, cb) => {
+  socket.on('room:rejoin', ({ code, id, name, color, emoji } = {}, cb) => {
     const room = rooms.get(String(code || '').trim().toUpperCase());
     if (!room) return cb?.({ ok: false, error: 'Комната не найдена' });
     const player = room.players.find((p) => p.id === sanitizeId(id) && !p.ai);
     if (!player) return cb?.({ ok: false, error: 'Сессия не найдена' });
 
+    player.color = sanitizeColor(color);
+    player.emoji = sanitizeEmoji(emoji);
     rejoinPlayer(room, player, socket);
     socketRooms.set(socket.id, room.code);
     socket.join(room.code);
@@ -364,7 +405,7 @@ io.on('connection', (socket) => {
 
     room.gameSeq += 1;
     room.game = new Game(
-      room.players.map((p) => ({ id: p.id, name: p.name, ai: p.ai })),
+      room.players.map((p) => ({ id: p.id, name: p.name, ai: p.ai, color: p.color, emoji: p.emoji })),
       room.settings.difficulty
     );
     room.status = 'playing';
@@ -414,9 +455,10 @@ io.on('connection', (socket) => {
     const rows = [];
     for (const [id, score] of cumulativeScores) {
       if (!score) continue;
-      const name = playerNames.get(id);
-      if (!name) continue;
-      rows.push({ id, name, score });
+const name = playerNames.get(id);
+    if (!name) continue;
+    const prof = playerProfiles.get(id) || {};
+    rows.push({ id, name, score, color: prof.color || DEFAULT_COLOR, emoji: prof.emoji || DEFAULT_EMOJI });
     }
     rows.sort((a, b) => b.score - a.score);
     cb?.({ ok: true, leaderboard: rows.slice(0, 50) });
