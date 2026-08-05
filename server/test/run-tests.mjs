@@ -108,21 +108,21 @@ check('первая выкладка ок', r8.ok, true);
 // ход теперь у бота — не можем ничего менять; просто убедимся что бот-ход работает дальше
 check('игра продолжается', g8.phase, 'playing');
 
-// --- Досрочное завершение игры ---
+// --- Досрочное завершение игры (без победителя и без начисления очков) ---
 const g9 = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'p2', name: 'Бот', ai: true }]);
 g9.players[0].hand = [tile('R1', 'R', 1), tile('R2', 'R', 2)]; // 3 очка
 g9.players[1].hand = [tile('B5', 'B', 5), tile('B6', 'B', 6)]; // 11 очков
 g9.endEarly();
 check('досрочное завершение', g9.phase, 'ended');
-check('победитель — меньшая сумма на руке', g9.winner?.id, 'p1');
-check('штрафы посчитаны', g9.players[1].score < 0 && g9.winner.score > 0, true);
+check('победитель не определяется', g9.winner, null);
+check('очки не начисляются', g9.players.every((p) => p.score === 0), true);
 
 const g10 = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'p2', name: 'Бот', ai: true }]);
 g10.players[0].hand = [tile('R1', 'R', 1)];
 g10.players[1].hand = [tile('B1', 'B', 1)];
 g10.endEarly();
-check('ничья при равенстве сумм', g10.winner, null);
-check('при ничьей все очки отрицательные', g10.players.every((p) => p.score < 0), true);
+check('ничья: победитель не определяется', g10.winner, null);
+check('ничья: очки не начисляются', g10.players.every((p) => p.score === 0), true);
 
 // --- AI ---
 const aiGame = new Game([

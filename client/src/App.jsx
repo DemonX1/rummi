@@ -24,25 +24,31 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
+  // Восстановление после обновления страницы и после авто-переподключения.
+  // Срабатывает только на реальных rejoin-событиях: монтирование + socket connect.
+  const tryRejoin = useCallback(() => {
+    const sess = getSession();
+    if (!sess?.code) return;
+    emit('room:rejoin', { code: sess.code, id: meId, name: sess.name || 'Игрок' }).then((res) => {
+      if (!res?.ok) clearSession();
+    });
+  }, [meId]);
+
   useEffect(() => {
     socket.on('room', (s) => {
       setSnap(s);
     });
     socket.on('error', showToast);
+    socket.on('connect', tryRejoin);
 
-    // Восстановление после обновления страницы (refresh не должен сбрасывать игру)
-    const sess = getSession();
-    if (sess?.code) {
-      emit('room:rejoin', { code: sess.code, id: meId, name: sess.name || 'Игрок' }).then((res) => {
-        if (!res?.ok) clearSession();
-      });
-    }
+    tryRejoin();
 
     return () => {
       socket.off('room', setSnap);
       socket.off('error', showToast);
+      socket.off('connect', tryRejoin);
     };
-  }, [showToast, meId]);
+  }, [showToast, tryRejoin]);
 
   const actions = useMemoActions(showToast, meId);
 

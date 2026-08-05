@@ -131,7 +131,7 @@ export default function Game({ snap, meId, actions, onExit }) {
     await actions.draw();
   };
   const endGame = () => {
-    if (window.confirm('Завершить игру досрочно? Победит игрок с наименьшим числом фишек на руке.')) {
+    if (window.confirm('Завершить игру досрочно? Очки за партию не начисляются, победитель не определяется.')) {
       actions.endGame();
     }
   };
@@ -194,7 +194,13 @@ export default function Game({ snap, meId, actions, onExit }) {
 
         <div className={`rack ${myTurn ? '' : 'rack-locked'}`}>
           {hand.length === 0 ? (
-            <div className="rack-empty">{game.phase === 'ended' ? 'Вы победили!' : 'Рука пуста'}</div>
+            <div className="rack-empty">
+              {game.phase === 'ended'
+                ? game.winnerId === meId
+                  ? 'Вы победили!'
+                  : 'Игра окончена'
+                : 'Рука пуста'}
+            </div>
           ) : (
             hand.map((t) => (
               <Tile
@@ -411,7 +417,7 @@ function EndPanel({ game, meId, onExit }) {
   const winner = game.players.find((p) => p.id === game.winnerId);
   return (
     <div className="controls end-panel">
-      <div className="end-title">Победил {winner ? winner.name : '…'}!</div>
+      <div className="end-title">{winner ? `Победил ${winner.name}!` : 'Игра завершена досрочно'}</div>
       <div className="end-scores">
         {game.players.map((p) => (
           <span key={p.id} className={p.id === game.winnerId ? 'win' : ''}>

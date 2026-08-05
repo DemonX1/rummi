@@ -68,27 +68,15 @@ export class Game {
     this.log.push(`Игра окончена. Победил ${this.winner.name}!`);
   }
 
-  /** Досрочное завершение игры (хост). Побеждает игрок с наименьшей суммой очков на руке. */
+  /** Досрочное завершение игры (хост). Без победителя и без начисления очков. */
   endEarly() {
     if (this.phase !== 'playing') return;
-    this.log.push('Игра завершена досрочно.');
-    const sums = this.players.map((p) => ({
-      p,
-      s: p.hand.reduce((a, t) => a + tilePoints(t), 0),
-    }));
-    const min = Math.min(...sums.map((x) => x.s));
-    const leaders = sums.filter((x) => x.s === min);
-    if (leaders.length === 1) {
-      this.winner = leaders[0].p;
-      this.finish();
-    } else {
-      this.phase = 'ended';
-      this.winner = null;
-      for (const p of this.players) {
-        p.score = -p.hand.reduce((a, t) => a + tilePoints(t), 0);
-      }
-      this.log.push('Победитель не определён (ничья по очкам на руке).');
+    this.phase = 'ended';
+    this.winner = null;
+    for (const p of this.players) {
+      p.score = 0;
     }
+    this.log.push('Игра завершена досрочно. Очки не начисляются, победитель не определяется.');
   }
 
   /** Взять фишку из колоды. Возвращает { ok, error?, tile? } */
