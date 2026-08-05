@@ -136,6 +136,9 @@ function useMemoActions(showToast, meId) {
         const res = await emit('game:end');
         if (!res?.ok) showToast(res?.error);
       },
+      async getLeaderboard() {
+        return emit('leaderboard:get');
+      },
     },
     [showToast, meId]
   );

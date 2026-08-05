@@ -33,6 +33,7 @@ const disconnectTimers = new Map(); // playerId -> timeout (grace на пере�
 // Накопленные очки игроков (сервер — единственный источник правды: начисляются
 // один раз при завершении партии, refresh не приводит к повторному начислению).
 const cumulativeScores = new Map(); // playerId -> суммарные очки
+const playerNames = new Map(); // playerId -> последний известный ник (для таблицы лидеров)
 
 const MAX_PLAYERS = 4;
 const RECONNECT_GRACE_MS = 8000; // столько ждём игрока после обрыва, прежде чем включить автопилот
@@ -172,7 +173,10 @@ function settleGame(room) {
   if (room.settledSeq === room.gameSeq) return;
   room.settledSeq = room.gameSeq;
   for (const p of g.players) {
-    if (p.score) cumulativeScores.set(p.id, (cumulativeScores.get(p.id) || 0) + p.score);
+    if (p.score) {
+      cumulativeScores.set(p.id, (cumulativeScores.get(p.id) || 0) + p.score);
+      if (!p.ai) playerNames.set(p.id, p.name);
+    }
   }
 }
 
@@ -404,6 +408,18 @@ io.on('connection', (socket) => {
     room.game.endEarly();
     cb?.({ ok: true });
     broadcastRoom(room);
+  });
+
+  socket.on('leaderboard:get', (cb) => {
+    const rows = [];
+    for (const [id, score] of cumulativeScores) {
+      if (!score) continue;
+      const name = playerNames.get(id);
+      if (!name) continue;
+      rows.push({ id, name, score });
+    }
+    rows.sort((a, b) => b.score - a.score);
+    cb?.({ ok: true, leaderboard: rows.slice(0, 50) });
   });
 
   socket.on('room:leave', (cb) => {

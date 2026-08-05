@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 
-export default function Home({ actions }) {
+export default function Home({ meId, actions }) {
   const [name, setName] = useState(localStorage.getItem('rummi-name') || '');
   const [code, setCode] = useState('');
+  const [leaders, setLeaders] = useState(null);
 
   const saveName = (n) => {
     setName(n);
@@ -13,6 +14,11 @@ export default function Home({ actions }) {
     if (!name.trim()) return;
     saveName(name.trim());
     fn();
+  };
+
+  const openLeaderboard = async () => {
+    const res = await actions.getLeaderboard();
+    setLeaders(res?.ok ? res.leaderboard : null);
   };
 
   return (
@@ -78,6 +84,37 @@ export default function Home({ actions }) {
         Составьте группы на 30+ очков, выложите первые фишки и сосредоточьтесь на самом
         интересном — Румикубе!
       </div>
+
+      <button className="btn btn-ghost leaderboard-btn" onClick={openLeaderboard}>
+        Таблица лидеров
+      </button>
+
+      {leaders !== null && (
+        <div className="modal-backdrop" onClick={() => setLeaders(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Таблица лидеров</h3>
+            {leaders.length === 0 ? (
+              <div className="empty-hint">Пока никто не набрал очков. Сыграйте первую партию!</div>
+            ) : (
+              <div className="leaderboard">
+                {leaders.map((row, i) => (
+                  <div
+                    key={row.id}
+                    className={`score-row ${row.id === meId ? 'me' : ''}`}
+                  >
+                    <span className="leader-rank">#{i + 1}</span>
+                    <span className="score-name">{row.name}</span>
+                    <span className="score-cell score-total">{row.score}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="btn btn-primary" onClick={() => setLeaders(null)}>
+              Закрыть
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

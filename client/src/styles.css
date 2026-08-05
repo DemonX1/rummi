@@ -620,6 +620,13 @@ select option { background: #1a1836; }
 .score-name { font-weight: 700; flex: 1; }
 .score-cell { color: var(--text-dim); }
 .score-total { color: var(--accent-2); font-weight: 700; }
+.score-row.me { border-color: var(--accent-2); background: rgba(34, 211, 238, 0.08); }
+
+.leaderboard { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.leaderboard .score-row { flex-wrap: nowrap; }
+.leader-rank { color: var(--text-dim); font-weight: 700; min-width: 34px; }
+.empty-hint { color: var(--text-dim); font-size: 14px; text-align: center; padding: 8px 0; }
+.leaderboard-btn { align-self: center; }
 
 /* Рука */
 .rack {
