@@ -2,6 +2,25 @@ import React, { useEffect, useRef, useState } from 'react';
 import Tile from './Tile.jsx';
 import { isValidMeld, sortMeld, tileValue } from '../lib/melds.js';
 
+const COLOR_RANK = { R: 0, B: 1, K: 2, Y: 3, JOKER: 4 };
+const HAND_SORT_OPTIONS = [
+  { key: 'none', label: 'Как пришло' },
+  { key: 'color', label: 'По цвету' },
+  { key: 'value', label: 'По возрастанию' },
+  { key: 'colorValue', label: 'Цвет + число' },
+];
+
+// Сортировка — только отображение руки; порядок в самом массиве не меняется.
+function sortHand(tiles, mode) {
+  if (mode === 'none') return tiles;
+  const valueRank = (t) => (t.color === 'JOKER' ? 14 : t.value);
+  const arr = tiles.slice();
+  if (mode === 'color') arr.sort((a, b) => COLOR_RANK[a.color] - COLOR_RANK[b.color]);
+  else if (mode === 'value') arr.sort((a, b) => valueRank(a) - valueRank(b));
+  else if (mode === 'colorValue') arr.sort((a, b) => COLOR_RANK[a.color] - COLOR_RANK[b.color] || valueRank(a) - valueRank(b));
+  return arr;
+}
+
 export default function Game({ snap, meId, actions, onExit }) {
   const game = snap.game;
   const you = game.you;
@@ -12,6 +31,7 @@ export default function Game({ snap, meId, actions, onExit }) {
   const [selected, setSelected] = useState(new Set());
   const [moved, setMoved] = useState(new Set());
   const [showScores, setShowScores] = useState(false);
+  const [handSort, setHandSort] = useState('none');
   const [actionBanner, setActionBanner] = useState(null); // { text, key, mine }
   const turnKeyRef = useRef(null);
 
@@ -188,6 +208,20 @@ export default function Game({ snap, meId, actions, onExit }) {
           )}
         </div>
 
+        <div className="rack-toolbar">
+          <div className="hand-sort">
+            {HAND_SORT_OPTIONS.map((o) => (
+              <button
+                key={o.key}
+                className={`sort-opt ${handSort === o.key ? 'active' : ''}`}
+                onClick={() => setHandSort(o.key)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className={`rack ${myTurn ? '' : 'rack-locked'}`}>
           {hand.length === 0 ? (
             <div className="rack-empty">
@@ -198,7 +232,7 @@ export default function Game({ snap, meId, actions, onExit }) {
                 : 'Рука пуста'}
             </div>
           ) : (
-            hand.map((t) => (
+            sortHand(hand, handSort).map((t) => (
               <Tile
                 key={t.id}
                 tile={t}
