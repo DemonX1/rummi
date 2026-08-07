@@ -43,6 +43,7 @@ export default function Room({ snap, meId, actions, onLeave }) {
               </span>
               <span className="player-name">{p.name}</span>
               <span className="badge badge-score">Σ {p.total}</span>
+              <span className="badge badge-games">{p.games ?? 0} игр</span>
               {p.ai && <span className="badge badge-bot">Бот</span>}
               {p.id === snap.hostId && <span className="badge badge-host">Хост</span>}
               {!p.connected && <span className="badge badge-off">отключён</span>}

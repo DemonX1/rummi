@@ -14,8 +14,10 @@ import {
   sanitizeEmoji,
   loadPlayers,
   getTotal,
+  getGames,
   loginPlayer,
   addScore,
+  addGames,
   leaderboard,
 } from './game/players.js';
 
@@ -145,6 +147,7 @@ function snapshot(room, playerId) {
       emoji: p.emoji || DEFAULT_EMOJI,
       connected: !!p.connected,
       total: getTotal(p.id),
+      games: getGames(p.id),
     })),
     game: null,
   };
@@ -183,6 +186,7 @@ function snapshot(room, playerId) {
         melded: p.melded,
         score: p.score || 0,
         total: getTotal(p.id),
+        games: getGames(p.id),
       })),
       you: me
         ? { hand: me.hand, melded: me.melded, drew: g.turnDrew, yourTurn: cur.id === me.id }
@@ -208,8 +212,10 @@ function settleGame(room) {
   if (room.settledSeq === room.gameSeq) return;
   room.settledSeq = room.gameSeq;
   for (const p of g.players) {
+    if (p.ai) continue; // боты в статистику и таблицу лидеров не попадают
+    // «Завершённой» считаем партию с победителем (досрочно прерванная — нет).
+    if (g.winner) addGames(p.id, { name: p.name, color: p.color, emoji: p.emoji });
     if (!p.score) continue;
-    if (p.ai) continue; // боты в таблицу лидеров не попадают
     addScore(p.id, p.score, { name: p.name, color: p.color, emoji: p.emoji });
   }
 }

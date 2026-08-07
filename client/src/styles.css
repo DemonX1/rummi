@@ -154,6 +154,11 @@ select option { background: #1a1836; }
   color: var(--accent-2);
   font-variant-numeric: tabular-nums;
 }
+.badge-games {
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
 
 .toast {
   position: fixed;

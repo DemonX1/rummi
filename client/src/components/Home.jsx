@@ -145,6 +145,7 @@ export default function Home({ meId, actions }) {
                       {row.emoji || row.name[0]?.toUpperCase()}
                     </span>
                     <span className="score-name">{row.name}</span>
+                    <span className="score-cell">{row.games ?? 0} игр</span>
                     <span className="score-cell score-total">{row.score}</span>
                   </div>
                 ))}
