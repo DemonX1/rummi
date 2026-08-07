@@ -185,6 +185,7 @@ function snapshot(room, playerId) {
         handCount: p.hand.length,
         melded: p.melded,
         score: p.score || 0,
+        think: p.think || 0,
         total: getTotal(p.id),
         games: getGames(p.id),
       })),

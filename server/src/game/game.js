@@ -29,6 +29,7 @@ export class Game {
       hand: deck.splice(0, HAND_SIZE),
       melded: false, // выложил ли первую комбинацию на 30+ очков
       score: 0,
+      think: 0, // суммарное время, потраченное на ходы (мс)
     }));
     this.stock = deck;
     this.discard = [];
@@ -37,6 +38,7 @@ export class Game {
     this.turnDrew = false;
     this.phase = 'playing'; // 'playing' | 'ended'
     this.winner = null;
+    this.turnStartedAt = Date.now();
     this.played = new Map(); // playerId -> tileIds, выложенные в его последнем ходе (хранятся, пока игрок не сыграет новые)
     this.log = [`Игра началась. Ходит ${this.players[0].name}.`];
   }
@@ -53,13 +55,22 @@ export class Game {
     return this.players[this.turnIndex]?.id === playerId;
   }
 
+  // Начисляет время хода текущему игроку и стартует новый отрезок.
+  chargeTurnTime() {
+    const cur = this.players[this.turnIndex];
+    if (cur) cur.think = (cur.think || 0) + (Date.now() - this.turnStartedAt);
+    this.turnStartedAt = Date.now();
+  }
+
   advanceTurn() {
+    this.chargeTurnTime();
     this.turnDrew = false;
     if (this.players.length <= 1) return;
     this.turnIndex = (this.turnIndex + 1) % this.players.length;
   }
 
   finish() {
+    this.chargeTurnTime();
     this.phase = 'ended';
     const others = this.players.filter((p) => p.id !== this.winner.id);
     const penaltySum = others.reduce((s, p) => {
@@ -74,6 +85,7 @@ export class Game {
   /** Досрочное завершение игры (хост). Без победителя и без начисления очков. */
   endEarly() {
     if (this.phase !== 'playing') return;
+    this.chargeTurnTime();
     this.phase = 'ended';
     this.winner = null;
     for (const p of this.players) {

@@ -799,6 +799,55 @@ select option { background: #1a1836; }
 .end-scores { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; color: var(--text-dim); }
 .end-scores .win { color: var(--ok); font-weight: 800; }
 
+/* Секундомер текущего хода (иконка часиков, не отвлекает) */
+.turn-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.player-chip.turn .turn-timer {
+  color: var(--accent-2);
+  opacity: 1;
+}
+
+/* Итоговая табличка: место, очки, суммарное время на ходы */
+.end-table { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.end-table-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.end-table-row.win { border-color: var(--ok); background: rgba(34, 197, 94, 0.12); }
+.end-table-head {
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-color: transparent;
+}
+.end-place { width: 46px; font-weight: 800; color: var(--accent-2); font-variant-numeric: tabular-nums; }
+.end-name { flex: 1; font-weight: 600; }
+.end-cell { color: var(--text-dim); }
+.end-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.end-panel .end-table .end-place { width: auto; min-width: 46px; }
+
 /* Скроллбары */
 ::-webkit-scrollbar { height: 10px; width: 10px; }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 6px; }

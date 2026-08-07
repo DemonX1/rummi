@@ -21,6 +21,22 @@ function sortHand(tiles, mode) {
   return arr;
 }
 
+function fmtSec(sec) {
+  const m = Math.floor(sec / 60);
+  return `${m}:${String(sec % 60).padStart(2, '0')}`;
+}
+function fmtMs(ms) {
+  return fmtSec(Math.floor((ms || 0) / 1000));
+}
+function ClockIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
 export default function Game({ snap, meId, actions, onExit }) {
   const game = snap.game;
   const you = game.you;
@@ -36,6 +52,17 @@ export default function Game({ snap, meId, actions, onExit }) {
   const turnKeyRef = useRef(null);
 
   const turnKey = `${game.phase}:${game.turnIndex}:${you?.yourTurn}`;
+
+  // Секундомер текущего хода (обнуляется при смене хода/фазы)
+  const [turnSec, setTurnSec] = useState(0);
+  const turnAnchorRef = useRef(Date.now());
+  useEffect(() => {
+    turnAnchorRef.current = Date.now();
+    setTurnSec(0);
+    if (game.phase !== 'playing') return;
+    const t = setInterval(() => setTurnSec(Math.floor((Date.now() - turnAnchorRef.current) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [game.phase, game.turnIndex]);
 
   // Синхронизация с сервером: сбрасываем локальную правку при смене хода/фазы
   useEffect(() => {
@@ -163,7 +190,7 @@ export default function Game({ snap, meId, actions, onExit }) {
 
   return (
     <div className="game">
-      <TopBar game={game} snap={snap} meId={meId} onOpenScores={() => setShowScores(true)} onEndGame={endGame} />
+      <TopBar game={game} snap={snap} meId={meId} turnSec={turnSec} onOpenScores={() => setShowScores(true)} onEndGame={endGame} />
 
       <div className="game-body">
         {actionBanner && (
@@ -251,7 +278,7 @@ export default function Game({ snap, meId, actions, onExit }) {
   );
 }
 
-function TopBar({ game, snap, meId, onOpenScores, onEndGame }) {
+function TopBar({ game, snap, meId, turnSec, onOpenScores, onEndGame }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isHost = snap.hostId === meId;
   const canEnd = isHost && game.phase === 'playing';
@@ -314,6 +341,12 @@ function TopBar({ game, snap, meId, onOpenScores, onEndGame }) {
                   ? `Очки: ${p.score > 0 ? '+' : ''}${p.score} · Σ ${p.total}`
                   : `${p.handCount} ф. · Σ ${p.total}`}
               </span>
+              {isTurn && (
+                <span className="turn-timer">
+                  <ClockIcon />
+                  {fmtSec(turnSec)}
+                </span>
+              )}
             </div>
           );
         })}
@@ -460,14 +493,29 @@ function Controls({
 
 function EndPanel({ game, meId, onExit }) {
   const winner = game.players.find((p) => p.id === game.winnerId);
+  const rows = game.players
+    .map((p) => ({ p, score: p.score || 0 }))
+    .sort((a, b) => b.score - a.score);
+  rows.forEach((r, i) => {
+    r.rank = i > 0 && rows[i - 1].score === r.score ? rows[i - 1].rank : i + 1;
+  });
   return (
     <div className="controls end-panel">
       <div className="end-title">{winner ? `Победил ${winner.name}!` : 'Игра завершена досрочно'}</div>
-      <div className="end-scores">
-        {game.players.map((p) => (
-          <span key={p.id} className={p.id === game.winnerId ? 'win' : ''}>
-            {p.name}: {p.score > 0 ? `+${p.score}` : p.score} · Σ {p.total}
-          </span>
+      <div className="end-table">
+        <div className="end-table-row end-table-head">
+          <span className="end-place">Место</span>
+          <span className="end-name">Игрок</span>
+          <span className="end-cell">Очки</span>
+          <span className="end-cell end-time"><ClockIcon /> Время на ходы</span>
+        </div>
+        {rows.map(({ p, rank }) => (
+          <div key={p.id} className={`end-table-row ${p.id === game.winnerId ? 'win' : ''}`}>
+            <span className="end-place">{rank}</span>
+            <span className="end-name">{p.name}{p.ai ? ' (бот)' : ''}</span>
+            <span className="end-cell">{p.score > 0 ? `+${p.score}` : p.score}</span>
+            <span className="end-time">{fmtMs(p.think)}</span>
+          </div>
         ))}
       </div>
       <button className="btn btn-primary" onClick={onExit}>
