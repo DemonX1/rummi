@@ -37,6 +37,48 @@ function ClockIcon() {
   );
 }
 
+function BtnIcon({ name }) {
+  const paths = {
+    group: (
+      <>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M12 8v8M8 12h8" />
+      </>
+    ),
+    undo: (
+      <>
+        <path d="M3 7v6h6" />
+        <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+      </>
+    ),
+    redo: (
+      <>
+        <path d="M21 7v6h-6" />
+        <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
+      </>
+    ),
+    reset: (
+      <>
+        <path d="M3 4v6h6" />
+        <path d="M3.5 15a9 9 0 1 0 2.2-9.4L3 10" />
+      </>
+    ),
+    draw: (
+      <>
+        <path d="M12 3v12" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M5 21h14" />
+      </>
+    ),
+    play: <path d="M6 4.5 19 12 6 19.5Z" />,
+  };
+  return (
+    <svg className="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  );
+}
+
 export default function Game({ snap, meId, actions, onExit }) {
   const game = snap.game;
   const you = game.you;
@@ -160,7 +202,7 @@ export default function Game({ snap, meId, actions, onExit }) {
     if (!tiles.length) return;
     const ids = new Set(tiles.map((t) => t.id));
     pushUndo();
-    setBoard([...board.filter((m) => !m.some((t) => ids.has(t.id))), sortMeld(tiles)]);
+    setBoard([...board.map((m) => m.filter((t) => !ids.has(t.id))).filter((m) => m.length > 0), sortMeld(tiles)]);
     const nextHand = hand.filter((t) => !ids.has(t.id));
     if (nextHand.length !== hand.length) {
       const n = new Set(moved);
@@ -508,16 +550,16 @@ function Controls({
     <div className="controls">
       <div className="controls-left">
         <button className="btn btn-ghost btn-sm" disabled={!hasSelection} onClick={onCreate}>
-          Новая группа
+          <BtnIcon name="group" /> Новая группа
         </button>
         <button className="btn btn-ghost btn-sm" disabled={!canUndo} onClick={onUndo} title="Отменить последнее действие">
-          Отменить
+          <BtnIcon name="undo" /> Отменить
         </button>
         <button className="btn btn-ghost btn-sm" disabled={!canRedo} onClick={onRedo} title="Вернуть отменённое действие">
-          Вернуть
+          <BtnIcon name="redo" /> Вернуть
         </button>
         <button className="btn btn-ghost btn-sm" disabled={!hasEdits} onClick={onReset}>
-          Сброс
+          <BtnIcon name="reset" /> Сброс
         </button>
       </div>
       <div className="controls-hint">
@@ -530,10 +572,10 @@ function Controls({
       </div>
       <div className="controls-right">
         <button className="btn btn-accent" disabled={!canDraw} onClick={onDraw}>
-          Взять фишку
+          <BtnIcon name="draw" /> Взять фишку
         </button>
         <button className="btn btn-primary" disabled={!canPlay} onClick={onPlay}>
-          Сыграть
+          <BtnIcon name="play" /> Сыграть
         </button>
       </div>
     </div>
