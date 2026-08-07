@@ -49,6 +49,8 @@ export default function Game({ snap, meId, actions, onExit }) {
   const [showScores, setShowScores] = useState(false);
   const [handSort, setHandSort] = useState('none');
   const [actionBanner, setActionBanner] = useState(null); // { text, key, mine }
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
   const turnKeyRef = useRef(null);
 
   const turnKey = `${game.phase}:${game.turnIndex}:${you?.yourTurn}`;
@@ -72,6 +74,8 @@ export default function Game({ snap, meId, actions, onExit }) {
       setHand(you ? you.hand.slice() : []);
       setSelected(new Set());
       setMoved(new Set());
+      setUndoStack([]);
+      setRedoStack([]);
       if (myTurn) {
         setActionBanner(null);
       }
@@ -80,6 +84,8 @@ export default function Game({ snap, meId, actions, onExit }) {
       setHand(you ? you.hand.slice() : []);
       setSelected(new Set());
       setMoved(new Set());
+      setUndoStack([]);
+      setRedoStack([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnKey, game.board, myTurn]);
@@ -120,33 +126,49 @@ export default function Game({ snap, meId, actions, onExit }) {
     return [...selected].map((id) => map.get(id)).filter(Boolean);
   };
 
-  const removeFromSources = (tiles, keepMeldIndex) => {
-    const ids = new Set(tiles.map((t) => t.id));
-    setBoard((prev) =>
-      prev
-        .map((m, mi) => (mi === keepMeldIndex ? m : m.filter((t) => !ids.has(t.id))))
-        .filter((m) => m.length > 0)
-    );
-    setHand((prev) => {
-      const next = prev.filter((t) => !ids.has(t.id));
-      if (next.length !== prev.length) {
-        setMoved((m) => {
-          const n = new Set(m);
-          tiles.forEach((t) => n.add(t.id));
-          return n;
-        });
-      }
-      return next;
-    });
+  const snapshot = () => ({ board: board.map((m) => m.slice()), hand: hand.slice(), moved: new Set(moved) });
+
+  const pushUndo = () => {
+    setUndoStack([...undoStack, snapshot()]);
+    setRedoStack([]);
+  };
+
+  const undo = () => {
+    if (!undoStack.length) return;
+    const last = undoStack[undoStack.length - 1];
+    setRedoStack([...redoStack, snapshot()]);
+    setBoard(last.board);
+    setHand(last.hand);
+    setMoved(new Set(last.moved));
+    setSelected(new Set());
+    setUndoStack(undoStack.slice(0, -1));
+  };
+
+  const redo = () => {
+    if (!redoStack.length) return;
+    const last = redoStack[redoStack.length - 1];
+    setUndoStack([...undoStack, snapshot()]);
+    setBoard(last.board);
+    setHand(last.hand);
+    setMoved(new Set(last.moved));
+    setSelected(new Set());
+    setRedoStack(redoStack.slice(0, -1));
   };
 
   const createMeld = () => {
     const tiles = selectedTiles();
     if (!tiles.length) return;
-    const idx = board.length;
-    setBoard((prev) => [...prev, sortMeld(tiles)]);
+    const ids = new Set(tiles.map((t) => t.id));
+    pushUndo();
+    setBoard([...board.filter((m) => !m.some((t) => ids.has(t.id))), sortMeld(tiles)]);
+    const nextHand = hand.filter((t) => !ids.has(t.id));
+    if (nextHand.length !== hand.length) {
+      const n = new Set(moved);
+      tiles.forEach((t) => n.add(t.id));
+      setMoved(n);
+    }
+    setHand(nextHand);
     setSelected(new Set());
-    removeFromSources(tiles, idx);
   };
 
   const addToMeld = (i) => {
@@ -154,10 +176,21 @@ export default function Game({ snap, meId, actions, onExit }) {
     if (!tiles.length) return;
     const already = new Set(board[i].map((t) => t.id));
     const fresh = tiles.filter((t) => !already.has(t.id));
+    if (!fresh.length) {
+      setSelected(new Set());
+      return;
+    }
+    const ids = new Set(fresh.map((t) => t.id));
+    pushUndo();
+    setBoard(board.map((m, mi) => (mi === i ? sortMeld([...m, ...fresh]) : m.filter((t) => !ids.has(t.id)))).filter((m) => m.length > 0));
+    const nextHand = hand.filter((t) => !ids.has(t.id));
+    if (nextHand.length !== hand.length) {
+      const n = new Set(moved);
+      fresh.forEach((t) => n.add(t.id));
+      setMoved(n);
+    }
+    setHand(nextHand);
     setSelected(new Set());
-    if (!fresh.length) return;
-    setBoard((prev) => prev.map((m, mi) => (mi === i ? sortMeld([...m, ...fresh]) : m)));
-    removeFromSources(fresh, i);
   };
 
   const reset = () => {
@@ -165,12 +198,18 @@ export default function Game({ snap, meId, actions, onExit }) {
     setHand(you ? you.hand.slice() : []);
     setSelected(new Set());
     setMoved(new Set());
+    setUndoStack([]);
+    setRedoStack([]);
   };
 
   const play = async () => {
+    setUndoStack([]);
+    setRedoStack([]);
     await actions.play(board.map((m) => m.slice()));
   };
   const draw = async () => {
+    setUndoStack([]);
+    setRedoStack([]);
     await actions.draw();
   };
   const endGame = () => {
@@ -222,8 +261,12 @@ export default function Game({ snap, meId, actions, onExit }) {
               isFirstMeld={!you.melded}
               deltaSum={deltaSum}
               placedCount={moved.size}
+              canUndo={undoStack.length > 0}
+              canRedo={redoStack.length > 0}
               onCreate={createMeld}
               onReset={reset}
+              onUndo={undo}
+              onRedo={redo}
               onPlay={play}
               onDraw={draw}
             />
@@ -458,14 +501,20 @@ function OpponentHands({ game, meId }) {
 }
 
 function Controls({
-  canDraw, canPlay, hasSelection, hasEdits, isFirstMeld, deltaSum, placedCount,
-  onCreate, onReset, onPlay, onDraw,
+  canDraw, canPlay, hasSelection, hasEdits, isFirstMeld, deltaSum, placedCount, canUndo, canRedo,
+  onCreate, onReset, onUndo, onRedo, onPlay, onDraw,
 }) {
   return (
     <div className="controls">
       <div className="controls-left">
         <button className="btn btn-ghost btn-sm" disabled={!hasSelection} onClick={onCreate}>
           Новая группа
+        </button>
+        <button className="btn btn-ghost btn-sm" disabled={!canUndo} onClick={onUndo} title="Отменить последнее действие">
+          Отменить
+        </button>
+        <button className="btn btn-ghost btn-sm" disabled={!canRedo} onClick={onRedo} title="Вернуть отменённое действие">
+          Вернуть
         </button>
         <button className="btn btn-ghost btn-sm" disabled={!hasEdits} onClick={onReset}>
           Сброс
