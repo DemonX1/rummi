@@ -15,9 +15,12 @@ export class Game {
   /**
    * @param players [{id, name, ai}] — список игроков
    * @param difficulty 'easy' | 'medium' | 'hard' — влияет на силу ботов
+   * @param scoreMultiplier — коэффициент начисления очков за партию
+   *   (1 только для «только люди + hard», меньше при ботах/низкой сложности)
    */
-  constructor(players, difficulty = 'medium') {
+  constructor(players, difficulty = 'medium', scoreMultiplier = 1) {
     this.difficulty = difficulty;
+    this.scoreMultiplier = scoreMultiplier || 1;
     const deck = shuffle(createDeck());
     this.players = players.map((p) => ({
       id: p.id,
@@ -72,13 +75,14 @@ export class Game {
   finish() {
     this.chargeTurnTime();
     this.phase = 'ended';
+    const k = this.scoreMultiplier || 1;
     const others = this.players.filter((p) => p.id !== this.winner.id);
     const penaltySum = others.reduce((s, p) => {
       const penalty = p.hand.reduce((a, t) => a + tilePoints(t), 0);
-      p.score = -penalty;
+      p.score = -Math.round(penalty * k);
       return s + penalty;
     }, 0);
-    this.winner.score = penaltySum;
+    this.winner.score = Math.round(penaltySum * k);
     this.log.push(`Игра окончена. Победил ${this.winner.name}!`);
   }
 
@@ -106,10 +110,24 @@ export class Game {
         this.stock = shuffle(this.discard.splice(0));
         this.log.push('Колода закончилась, сброс перемешан заново.');
       } else {
-        return { ok: false, error: 'Колода пуста' };
+        // Колода пуста: ход переходит дальше; после двух полных кругов передач — ничья
+        const who = this.currentPlayer().name;
+        this.emptyPasses = (this.emptyPasses || 0) + 1;
+        if (this.emptyPasses >= this.players.length * 2) {
+          this.chargeTurnTime();
+          this.phase = 'ended';
+          this.winner = null;
+          for (const p of this.players) p.score = 0;
+          this.log.push('Колода пуста и никто не может сходить — ничья.');
+          return { ok: true, tile: null };
+        }
+        this.log.push(`${who}: колода пуста, ход переходит дальше.`);
+        this.advanceTurn();
+        return { ok: true, tile: null };
       }
     }
     tile = this.stock.pop();
+    this.emptyPasses = 0;
     const who = this.currentPlayer().name;
     this.getPlayer(playerId).hand.push(tile);
     this.turnDrew = true;
@@ -171,6 +189,7 @@ export class Game {
     player.hand = player.hand.filter((t) => !deltaSet.has(t.id));
     player.melded = true;
     this.board = board;
+    this.emptyPasses = 0;
     this.played.set(player.id, deltaIds);
     this.log.push(`${player.name} выложил фишки на стол.`);
 

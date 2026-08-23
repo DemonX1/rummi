@@ -593,6 +593,9 @@ function EndPanel({ game, meId, onExit }) {
   return (
     <div className="controls end-panel">
       <div className="end-title">{winner ? `Победил ${winner.name}!` : 'Игра завершена досрочно'}</div>
+      {!!game.multiplier && game.multiplier < 1 && (
+        <div className="end-mult">Коэффициент очков за партию: ×{game.multiplier}</div>
+      )}
       <div className="end-table">
         <div className="end-table-row end-table-head">
           <span className="end-place">Место</span>

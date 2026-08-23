@@ -1,6 +1,6 @@
 import { isValidMeld, sortMeld } from '../src/game/melds.js';
 import { Game } from '../src/game/game.js';
-import { aiDecision } from '../src/game/ai.js';
+import { aiDecision, makeRng } from '../src/game/ai.js';
 
 let pass = 0;
 let fail = 0;
@@ -134,6 +134,137 @@ const aiGame = new Game([
 aiGame.players[1].hand = Array.from({ length: 14 }, (_, i) => ({ id: `ai${i}`, color: 'R', value: (i % 13) + 1 }));
 const d = aiDecision(aiGame);
 check('aiDecision возвращает объект или null', d === null || typeof d.board === 'object', true);
+
+// --- Бот ходит через валидацию game.play() наравне с игроком ---
+const gp = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'bot1', name: 'Бот', ai: true }]);
+gp.turnIndex = 1;
+gp.players[1].hand = [tile('R11', 'R', 11), tile('R12', 'R', 12), tile('R13', 'R', 13), tile('B2', 'B', 2)];
+const botDec = aiDecision(gp, { rng: () => 1 });
+check('бот нашёл первую выкладку', !!botDec, true);
+const botRes = gp.play('bot1', botDec.board);
+check('ход бота принят game.play()', botRes.ok, true);
+check('после хода бота ходит игрок', gp.currentPlayer().id, 'p1');
+check('фишки бота ушли с руки', gp.players[1].hand.some((t) => t.id === 'B2'), true);
+
+// --- Джокеры в новых группах (medium/hard) ---
+function fakeGame({ difficulty, hand, melded = true, board = [] }) {
+  return { difficulty, board, turnIndex: 0, players: [{ hand, melded }] };
+}
+const jg = fakeGame({ difficulty: 'medium', hand: [t('R', 7), t('B', 7), j(9)] });
+const jd = aiDecision(jg);
+check(
+  'джокер достраивает сет',
+  jd && jd.board.length === 1 && jd.board[0].length === 3 && jd.hand.length === 0,
+  true
+);
+
+// Оптимизатор первой выкладки не тратит джокер зря
+const og = fakeGame({
+  difficulty: 'medium',
+  melded: false,
+  hand: [t('R', 13), t('K', 13), t('Y', 13), j(2)],
+});
+const od = aiDecision(og, { rng: () => 1 });
+check('первая выкладка без джокера', od && od.board.length === 1 && od.board[0].length === 3, true);
+check('джокер остался в руке', od && od.hand.some((x) => x.color === 'JOKER'), true);
+
+// Джокер помогает дотянуть до 30
+const hg = fakeGame({ difficulty: 'medium', melded: false, hand: [t('R', 10), t('B', 2), t('B', 3), j(3)] });
+const hd = aiDecision(hg, { rng: () => 1 });
+check('серия с джокером набирает 30+', hd && hd.board.flat().length === 3, true);
+
+// На easy джокеры для новых групп не используются
+const eg = fakeGame({ difficulty: 'easy', melded: false, hand: [t('R', 10), t('B', 2), t('B', 3), j(4)] });
+check('easy не может собрать 30 — берёт фишку', aiDecision(eg), null);
+
+// --- Манипуляции столом (hard): разобрать серию ради сета ---
+function deepCopy(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+const mg = fakeGame({
+  difficulty: 'hard',
+  board: [[tile('R5', 'R', 5), tile('R6', 'R', 6), tile('R7', 'R', 7)]],
+  hand: [t('B', 5), t('K', 5), t('R', 8)],
+});
+const md = aiDecision(mg);
+check('манипуляция найдена', !!md, true);
+if (md) {
+  const flat = md.board.flat();
+  const oldIds = ['R5', 'R6', 'R7'];
+  check('старые фишки стола сохранены', oldIds.every((id) => flat.some((x) => x.id === id)), true);
+  check('все группы корректны', md.board.every((m) => m.length >= 3 && isValidMeld(m)), true);
+  check('выложено несколько фишек руки', md.hand.length <= 1, true);
+}
+
+// Детерминизм при фиксированном сиде
+const detA = fakeGame({
+  difficulty: 'hard',
+  board: [[tile('R5', 'R', 5), tile('R6', 'R', 6), tile('R7', 'R', 7)]],
+  hand: [t('B', 5), t('K', 5), t('R', 8)],
+});
+const detB = deepCopy(detA);
+const rd1 = aiDecision(detA, { rng: makeRng(12345) });
+const rd2 = aiDecision(detB, { rng: makeRng(12345) });
+check('детерминизм решения', JSON.stringify(rd1?.board) === JSON.stringify(rd2?.board), true);
+
+// --- Производительность: тяжёлая позиция решается быстро ---
+const COLORS4 = ['R', 'B', 'K', 'Y'];
+let hid = 0;
+const heavyBoard = [];
+for (const color of COLORS4) {
+  for (let start = 1; start <= 9; start += 4) {
+    heavyBoard.push(
+      Array.from({ length: 4 }, (_, k) => tile(`h${hid++}`, color, start + k))
+    );
+  }
+}
+const heavyHand = [
+  t('R', 5), t('R', 6), t('B', 9), t('B', 10), t('B', 11),
+  t('K', 2), t('K', 3), t('Y', 7), t('Y', 8), t('R', 12),
+  t('K', 13), j(21), j(22), t('B', 4),
+];
+const heavyGame = fakeGame({ difficulty: 'hard', board: heavyBoard, hand: heavyHand });
+const t0 = Date.now();
+aiDecision(heavyGame);
+const dt = Date.now() - t0;
+check(`решение тяжёлой позиции быстрее 500 мс (${dt} мс)`, dt < 500, true);
+
+// --- Коэффициент очков за партию ---
+const gm = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'p2', name: 'Бот', ai: true }], 'medium', 0.5);
+gm.players[0].hand = [tile('R11', 'R', 11), tile('R12', 'R', 12), tile('R13', 'R', 13)];
+gm.players[1].hand = [tile('B5', 'B', 5), tile('B6', 'B', 6)]; // штраф 11
+const rm = gm.play('p1', [[tile('R11', 'R', 11), tile('R12', 'R', 12), tile('R13', 'R', 13)]]);
+check('победа с коэффициентом принята', rm.ok, true);
+check('штраф соперника умножен и округлён', gm.players[1].score, -Math.round(11 * 0.5));
+check('очки победителя умножены и округлены', gm.winner.score, Math.round(11 * 0.5));
+
+// Без коэффициента (по умолчанию 1) всё как раньше
+const gm1 = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'p2', name: 'Бот', ai: true }]);
+gm1.players[0].hand = [tile('R11', 'R', 11), tile('R12', 'R', 12), tile('R13', 'R', 13)];
+gm1.players[1].hand = [tile('B5', 'B', 5), tile('B6', 'B', 6)];
+gm1.play('p1', [[tile('R11', 'R', 11), tile('R12', 'R', 12), tile('R13', 'R', 13)]]);
+check('коэффициент по умолчанию 1', gm1.winner.score, -gm1.players[1].score);
+
+// --- Пустая колода: ход переходит, а не ломается ---
+const ge = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'p2', name: 'Бот', ai: true }]);
+ge.stock = [];
+ge.discard = [];
+const re = ge.draw('p1');
+check('пустая колода: взятие не падает', re.ok, true);
+check('пустая колода: фишки нет', re.tile, null);
+check('пустая колода: ход перешёл', ge.currentPlayer().id, 'p2');
+
+// Ничья: колода пуста, все передают ход два полных круга
+const gn = new Game([{ id: 'p1', name: 'Аня', ai: false }, { id: 'p2', name: 'Бот', ai: true }]);
+gn.stock = [];
+gn.discard = [];
+for (let i = 0; i < 4 && gn.phase === 'playing'; i++) {
+  const res = gn.draw(gn.currentPlayer().id);
+  check('передача хода при пустой колоде ок', res.ok, true);
+}
+check('ничья при пустой колоде', gn.phase, 'ended');
+check('ничья: без победителя', gn.winner, null);
+check('ничья: очки не начисляются', gn.players.every((p) => p.score === 0), true);
 
 console.log(`\n✅ ${pass} passed, ❌ ${fail} failed`);
 process.exit(fail ? 1 : 0);

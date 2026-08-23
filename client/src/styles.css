@@ -806,6 +806,7 @@ select option { background: #1a1836; }
 /* Панель конца игры */
 .end-panel { justify-content: center; text-align: center; flex-direction: column; gap: 10px; }
 .end-title { font-size: 22px; font-weight: 900; }
+.end-mult { font-size: 12px; color: var(--text-dim); margin-top: -4px; }
 .end-scores { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; color: var(--text-dim); }
 .end-scores .win { color: var(--ok); font-weight: 800; }
 

@@ -50,6 +50,17 @@ const disconnectTimers = new Map(); // playerId -> timeout (grace на пере�
 const MAX_PLAYERS = 4;
 const RECONNECT_GRACE_MS = 8000; // столько ждём игрока после обрыва, прежде чем включить автопилот
 
+// Коэффициент очков за партию: полный — только «все люди + hard»,
+// с ботами и на низких сложностях сильно урезан (защита от фарма).
+const SCORE_MULT_HUMANS = { easy: 0.25, medium: 0.5, hard: 1 };
+const SCORE_MULT_WITH_BOTS = { easy: 0.1, medium: 0.2, hard: 0.5 };
+
+function scoreMultiplier(room) {
+  const humanOnly = room.players.every((p) => !p.ai);
+  const table = humanOnly ? SCORE_MULT_HUMANS : SCORE_MULT_WITH_BOTS;
+  return table[room.settings.difficulty] ?? 1;
+}
+
 function botProfile(room) {
   return {
     color: PLAYER_COLORS[room.players.length % PLAYER_COLORS.length],
@@ -163,6 +174,7 @@ function snapshot(room, playerId) {
       stockCount: g.stock.length,
       log: g.log.slice(-10),
       difficulty: g.difficulty,
+      multiplier: g.scoreMultiplier ?? 1,
       played: g.played
         ? [...g.played].map(([pid, tileIds]) => {
             const p = g.getPlayer(pid);
@@ -244,25 +256,12 @@ function scheduleAi(room) {
     if (g.players[g.turnIndex].id !== cur.id) return;
 
     const decision = aiDecision(g);
+    let applied = false;
     if (decision) {
-      const prevIds = new Set(g.board.flat().map((t) => t.id));
-      const newIds = decision.board.flat().map((t) => t.id);
-      const placed = [...new Set(newIds)].filter((id) => !prevIds.has(id));
-      g.played.set(cur.id, placed);
-      cur.hand = decision.hand;
-      cur.melded = decision.melded;
-      g.board = decision.board;
-      g.log.push(`${cur.name} выложил фишки на стол.`);
-      if (cur.hand.length === 0) {
-        g.winner = cur;
-        g.finish();
-      } else {
-        g.advanceTurn();
-        g.log.push(`Ходит ${g.currentPlayer().name}.`);
-      }
-    } else {
-      g.draw(cur.id);
+      // Бот ходит через ту же валидацию game.play(), что и живой игрок
+      applied = g.play(cur.id, decision.board).ok;
     }
+    if (!applied) g.draw(cur.id);
     emitRoom(room);
     scheduleAi(room);
   }, delay);
@@ -407,6 +406,7 @@ io.on('connection', (socket) => {
     const me = room && getPlayerBySocket(room, socket);
     if (!room || !me) return cb?.({ ok: false, error: 'Комната не найдена' });
     if (room.hostId !== me.id) return cb?.({ ok: false, error: 'Только хост' });
+    if (room.status !== 'lobby') return cb?.({ ok: false, error: 'Сложность можно менять только в лобби' });
     if (['easy', 'medium', 'hard'].includes(difficulty)) {
       room.settings.difficulty = difficulty;
     }
@@ -423,9 +423,11 @@ io.on('connection', (socket) => {
     if (room.players.length < 2) return cb?.({ ok: false, error: 'Нужно минимум 2 игрока (можно добавить бота)' });
 
     room.gameSeq += 1;
+    const mult = scoreMultiplier(room);
     room.game = new Game(
       room.players.map((p) => ({ id: p.id, name: p.name, ai: p.ai, color: p.color, emoji: p.emoji })),
-      room.settings.difficulty
+      room.settings.difficulty,
+      mult
     );
     room.status = 'playing';
     cb?.({ ok: true });
