@@ -266,5 +266,112 @@ check('ничья при пустой колоде', gn.phase, 'ended');
 check('ничья: без победителя', gn.winner, null);
 check('ничья: очки не начисляются', gn.players.every((p) => p.score === 0), true);
 
+// --- Профили (profiles.js): миграция v1→v2, устройства, коды, статистика, друзья ---
+{
+  const fsProm = await import('node:fs/promises');
+  const osMod = await import('node:os');
+  const pathMod = await import('node:path');
+
+  const dir = await fsProm.mkdtemp(pathMod.join(osMod.tmpdir(), 'rummi-profiles-'));
+  const pf = pathMod.join(dir, 'players.json');
+  // Фикстура старого формата v1: у Васи вручную прописан алиас второго устройства.
+  await fsProm.writeFile(pf, JSON.stringify({
+    uaaa1: { name: 'Вася', color: '#3b82f6', emoji: '🐶', total: 120, games: 10, aliases: ['ubbb2'] },
+    ubbb2: { name: 'Вася2', color: '#22c55e', emoji: '🐱', total: 30, games: 3 },
+    uccc3: { name: 'Петя', color: '#ef4444', emoji: '🦊', total: 5, games: 1 },
+  }, null, 2));
+
+  process.env.PLAYERS_FILE = pf;
+  const P = await import('../src/profiles.js');
+  P.loadProfiles();
+
+  check('миграция: алиас резолвится в канонический профиль', P.resolveDevice('ubbb2'), 'uaaa1');
+  check('миграция: очки алиаса поглощены (120+30)', P.getStats('uaaa1', 'rummikub').total, 150);
+  check('миграция: партии алиаса сложены (10+3)', P.getStats('uaaa1', 'rummikub').games, 13);
+  check('миграция: чужой профиль не тронут', P.getStats('uccc3', 'rummikub').total, 5);
+  check('миграция: алиас стал устройством профиля', P.profileView('uaaa1').devices.includes('ubbb2'), true);
+
+  let bakOk = false;
+  try {
+    await fsProm.readFile(`${pf}.bak`, 'utf8');
+    bakOk = true;
+  } catch { /* нет файла */ }
+  check('миграция: бэкап создан', bakOk, true);
+
+  const stored = JSON.parse(await fsProm.readFile(pf, 'utf8'));
+  check('миграция: файл переписан в v2', stored.version, 2);
+  check('миграция: запись алиаса удалена из файла', stored.profiles.ubbb2, undefined);
+
+  // Повторная загрузка идемпотентна и данные не теряются
+  P.loadProfiles();
+  check('повторная загрузка: тотал на месте', P.getStats('uaaa1', 'rummikub').total, 150);
+  check('повторная загрузка: индекс устройств восстановлен', P.resolveDevice('ubbb2'), 'uaaa1');
+
+  // Новое устройство -> собственный профиль
+  P.loginPlayer('uddd4', { name: 'Оля' });
+  check('новое устройство создаёт свой профиль', P.resolveDevice('uddd4'), 'uddd4');
+  check('пустой профиль без статистики', P.getStats('uddd4', 'rummikub').total, 0);
+
+  // Коды привязки
+  check('код для несуществующего профиля — null', P.createLinkCode('nosuchpid'), null);
+  const lc = P.createLinkCode('uaaa1');
+  check('код создан в правильном формате', /^[A-Z2-9]{6}$/.test(lc?.code || ''), true);
+  check('линк принимает код в любом регистре', P.linkDevice('uddd4', lc.code.toLowerCase()).ok, true);
+  check('после линка устройство играет под профилем Васи', P.resolveDevice('uddd4'), 'uaaa1');
+  check('код одноразовый', !!P.linkDevice('ueee5', lc.code).error, true);
+  const lc2 = P.createLinkCode('uaaa1');
+  check('истёкший код отклонён', !!P.linkDevice('ueee5', lc2.code, { now: Date.now() + 11 * 60 * 1000 }).error, true);
+  check('второй код инвалидирует первый', !!P.linkDevice('ueee5', lc2.code).ok === false && !!P.linkDevice('ueee5', lc2.code).error, true);
+
+  // Запись результатов партии в неймспейс игры
+  P.recordResult('rummikub', 'uaaa1', { score: 40, won: true, place: 1, players: 3 });
+  P.recordResult('rummikub', 'uaaa1', { score: -5, won: false, place: 3, players: 3 });
+  P.recordResult('rummikub', 'uaaa1', { score: 10, won: true, place: 1, players: 2 });
+  let st = P.getStats('uaaa1', 'rummikub');
+  check('recordResult: total (150+40-5+10)', st.total, 195);
+  check('recordResult: games', st.games, 16);
+  check('recordResult: wins', st.wins, 2);
+  check('recordResult: bestWin', st.bestWin, 40);
+  check('recordResult: byPlayers[3]', st.byPlayers['3'], { games: 2, wins: 1 });
+  check('recordResult: история пишется с местом', st.history[0].score === 40 && st.history[0].place === 1, true);
+
+  // Кап истории
+  for (let i = 0; i < 25; i++) {
+    P.recordResult('rummikub', 'uccc3', { score: 1, won: false, place: 2, players: 2 });
+  }
+  check('история ограничена 20 записями', P.getStats('uccc3', 'rummikub').history.length, 20);
+  check('тотал при этом копится дальше', P.getStats('uccc3', 'rummikub').total, 30);
+
+  // Слияние профилей при привязке устройства со своей статистикой
+  P.loginPlayer('ufff6', { name: 'Зоя' });
+  P.recordResult('rummikub', 'ufff6', { score: 7, won: false, place: 2, players: 2 });
+  const lcZ = P.createLinkCode('uaaa1');
+  check('линк устройства со своей статистикой', P.linkDevice('ufff6', lcZ.code).ok, true);
+  check('слияние: очки Зои перешли Васе (195+7)', P.getStats('uaaa1', 'rummikub').total, 202);
+  check('слияние: старый pid редиректится', P.getStats('ufff6', 'rummikub').total, 202);
+  check('слияние: byPlayers сложились', P.getStats('uaaa1', 'rummikub').byPlayers['2'], { games: 2, wins: 1 });
+
+  // Друзья
+  check('нельзя добавить себя', !!P.friendsAdd('uaaa1', 'uaaa1').error, true);
+  check('несуществующий друг отклонён', !!P.friendsAdd('uaaa1', 'nobody1').error, true);
+  check('друг добавлен', P.friendsAdd('uaaa1', 'uccc3').ok, true);
+  check('дубликат не создаётся', P.friendsRecords('uaaa1').length, 1);
+  check('друг удалён', P.friendsRemove('uaaa1', 'uccc3').ok && P.friendsRecords('uaaa1').length === 0, true);
+
+  // Отвязка устройств
+  P.loginPlayer('uzzz9', { name: 'Одиночка' });
+  check('нельзя отвязать единственное устройство', !!P.unlinkDevice('uzzz9').error, true);
+  check('отвязка одного из устройств проходит', P.unlinkDevice('uddd4').ok, true);
+  check('после отвязки устройство снова само по себе', P.resolveDevice('uddd4'), 'uddd4');
+  check('отвязка не задела статистику профиля', P.getStats('uaaa1', 'rummikub').total, 202);
+
+  // Перезапуск сервера: всё прочитанное с диска согласовано
+  P.loadProfiles();
+  check('перезапуск: тотал сохранился', P.getStats('uaaa1', 'rummikub').total, 202);
+  check('перезапуск: устройства восстановлены', P.profileView('uaaa1').devices.includes('uddd4'), false);
+
+  console.log('\n--- Профили ---');
+}
+
 console.log(`\n✅ ${pass} passed, ❌ ${fail} failed`);
 process.exit(fail ? 1 : 0);

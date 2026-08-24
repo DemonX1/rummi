@@ -10,7 +10,7 @@ export const socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
 const PLAYER_KEY = 'rummi-player-id';
 const SESSION_KEY = 'rummi-session';
 
-// Стабильный идентификатор игрока, переживающий обновление страницы.
+// Стабильный идентификатор устройства, переживающий обновление страницы.
 export function getPlayerId() {
   let id = localStorage.getItem(PLAYER_KEY);
   if (!id) {
@@ -18,6 +18,20 @@ export function getPlayerId() {
     localStorage.setItem(PLAYER_KEY, id);
   }
   return id;
+}
+
+// Привязка устройства к серверному профилю: устройство может быть «слито» с
+// профилем другого устройства через код привязки. Источник истины — сервер;
+// здесь лишь кэш, чтобы подсветки работали до первого ответа сервера.
+const PID_KEY = 'rummi-profile-id';
+
+export function getCachedProfileId() {
+  return localStorage.getItem(PID_KEY);
+}
+
+export function cacheProfileId(pid) {
+  if (pid) localStorage.setItem(PID_KEY, pid);
+  else localStorage.removeItem(PID_KEY);
 }
 
 // Сессия: в какой комнате находился игрок, чтобы восстановиться после refresh.
@@ -38,7 +52,7 @@ export function clearSession() {
 }
 
 // Профиль игрока: цвет и смайлик-аватарка (звери). Переживает обновление страницы.
-// Источник правды для постоянных данных — сервер (players.json); localStorage —
+// Источник правды для постоянных данных — серверное хранилище профилей; localStorage —
 // лишь кэш выбранного в этой сессии. «touched» = игрок менял аватарку сейчас.
 const PROFILE_KEY = 'rummi-profile';
 export const PLAYER_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899'];

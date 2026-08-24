@@ -1,21 +1,33 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PLAYER_COLORS, PLAYER_EMOJIS, getProfile, saveProfile, markProfileTouched } from '../lib/socket.js';
+import ProfileModal from './ProfileModal.jsx';
 
-export default function Home({ meId, actions }) {
+export default function Home({ meId, actions, profile, onProfileChanged }) {
   const [name, setName] = useState(localStorage.getItem('rummi-name') || '');
-  const [code, setCode] = useState('');
-  const [profile, setProfile] = useState(getProfile());
+  // Код комнаты из ссылки вида /?room=XXXXX подставляем сразу в поле.
+  const [code, setCode] = useState(() => (new URLSearchParams(window.location.search).get('room') || '').toUpperCase());
+  const [cameByLink, setCameByLink] = useState(() => !!new URLSearchParams(window.location.search).get('room'));
+  const [avatar, setAvatar] = useState(getProfile());
+  const [profileOpen, setProfileOpen] = useState(false);
   const [leaders, setLeaders] = useState(null);
+
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).get('room')) return;
+    window.history.replaceState({}, '', window.location.pathname);
+    // Подсказка показываем, только пока код не изменили вручную
+    const t = setTimeout(() => setCameByLink(false), 15000);
+    return () => clearTimeout(t);
+  }, []);
 
   const saveName = (n) => {
     setName(n);
     localStorage.setItem('rummi-name', n);
   };
 
-  const updateProfile = (patch) => {
+  const updateAvatar = (patch) => {
     markProfileTouched();
-    const next = { ...profile, ...patch };
-    setProfile(next);
+    const next = { ...avatar, ...patch };
+    setAvatar(next);
     saveProfile(next);
   };
 
@@ -29,6 +41,14 @@ export default function Home({ meId, actions }) {
     const res = await actions.getLeaderboard();
     setLeaders(res?.ok ? res.leaderboard : null);
   };
+
+  const addFriend = async (friendId) => {
+    const res = await actions.addFriend(friendId);
+    if (res?.ok) onProfileChanged(res.profile);
+  };
+
+  const myProfileId = profile?.id || meId;
+  const friendIds = new Set(profile?.friends || []);
 
   return (
     <div className="home">
@@ -61,10 +81,10 @@ export default function Home({ meId, actions }) {
               <button
                 key={c}
                 type="button"
-                className={`color-swatch ${profile.color === c ? 'active' : ''}`}
+                className={`color-swatch ${avatar.color === c ? 'active' : ''}`}
                 style={{ background: c }}
                 title={c}
-                onClick={() => updateProfile({ color: c })}
+                onClick={() => updateAvatar({ color: c })}
               />
             ))}
           </div>
@@ -74,8 +94,8 @@ export default function Home({ meId, actions }) {
               <button
                 key={e}
                 type="button"
-                className={`emoji-pick ${profile.emoji === e ? 'active' : ''}`}
-                onClick={() => updateProfile({ emoji: e })}
+                className={`emoji-pick ${avatar.emoji === e ? 'active' : ''}`}
+                onClick={() => updateAvatar({ emoji: e })}
               >
                 {e}
               </button>
@@ -116,12 +136,13 @@ export default function Home({ meId, actions }) {
             Присоединиться
           </button>
         </div>
-      </div>
+        {cameByLink && name.trim() && (
+          <div className="link-hint">Комната {code} ждёт — введите имя и нажмите «Присоединиться».</div>
+        )}      </div>
 
-      <div className="rules-hint">
-        Составьте группы на 30+ очков, выложите первые фишки и сосредоточьтесь на самом
-        интересном — Румикубе!
-      </div>
+      <button className="btn btn-ghost leaderboard-btn" onClick={() => setProfileOpen(true)}>
+        Мой профиль
+      </button>
 
       <button className="btn btn-ghost leaderboard-btn" onClick={openLeaderboard}>
         Таблица лидеров
@@ -138,7 +159,7 @@ export default function Home({ meId, actions }) {
                 {leaders.map((row, i) => (
                   <div
                     key={row.id}
-                    className={`score-row ${row.id === meId ? 'me' : ''}`}
+                    className={`score-row ${row.id === myProfileId ? 'me' : ''}`}
                   >
                     <span className="leader-rank">#{i + 1}</span>
                     <span className="leader-avatar" style={{ background: row.color || '#7c3aed' }}>
@@ -147,6 +168,15 @@ export default function Home({ meId, actions }) {
                     <span className="score-name">{row.name}</span>
                     <span className="score-cell">{row.games ?? 0} игр</span>
                     <span className="score-cell score-total">{row.score}</span>
+                    {row.id !== myProfileId && !friendIds.has(row.id) && (
+                      <button
+                        className="btn btn-sm friend-add"
+                        title="Добавить в друзья"
+                        onClick={() => addFriend(row.id)}
+                      >
+                        +
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -156,6 +186,15 @@ export default function Home({ meId, actions }) {
             </button>
           </div>
         </div>
+      )}
+
+      {profileOpen && (
+        <ProfileModal
+          profile={profile}
+          actions={actions}
+          onClose={() => setProfileOpen(false)}
+          onChanged={onProfileChanged}
+        />
       )}
     </div>
   );

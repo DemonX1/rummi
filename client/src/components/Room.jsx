@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import FriendsModal from './FriendsModal.jsx';
 
 const DIFFICULTY = {
   easy: 'Лёгкий',
@@ -8,6 +9,7 @@ const DIFFICULTY = {
 
 export default function Room({ snap, meId, actions, onLeave }) {
   const [copied, setCopied] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const isHost = snap.hostId === meId;
   const botCount = snap.players.filter((p) => p.ai).length;
 
@@ -58,6 +60,9 @@ export default function Room({ snap, meId, actions, onLeave }) {
 
         {isHost && (
           <div className="room-controls">
+            <button className="btn btn-ghost" onClick={() => setInviteOpen(true)}>
+              Пригласить друга
+            </button>
             <button className="btn btn-ghost" onClick={actions.addBot}>
               + Добавить бота
             </button>
@@ -83,6 +88,8 @@ export default function Room({ snap, meId, actions, onLeave }) {
           <div className="start-hint">Добавьте бота или пригласите друга по коду.</div>
         )}
       </div>
+
+      {inviteOpen && <FriendsModal snap={snap} actions={actions} onClose={() => setInviteOpen(false)} />}
     </div>
   );
 }

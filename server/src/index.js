@@ -10,16 +10,22 @@ import {
   PLAYER_EMOJIS,
   DEFAULT_COLOR,
   DEFAULT_EMOJI,
-  sanitizeColor,
-  sanitizeEmoji,
-  loadPlayers,
-  getTotal,
-  getGames,
+  GAME_RUMMIKUB,
+  sanitizeDeviceId,
+  loadProfiles,
   loginPlayer,
-  addScore,
-  addGames,
+  recordResult,
+  getStats,
   leaderboard,
-} from './game/players.js';
+  createLinkCode,
+  linkDevice,
+  unlinkDevice,
+  friendsAdd,
+  friendsRemove,
+  friendsRecords,
+  profileView,
+  resolveDevice,
+} from './profiles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, '..', '..', 'client', 'dist');
@@ -31,7 +37,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3001;
 const isProd = process.env.NODE_ENV === 'production';
 
-loadPlayers();
+loadProfiles();
 
 if (isProd) {
   app.use(express.static(DIST));
@@ -45,7 +51,14 @@ if (isProd) {
 const rooms = new Map(); // code -> room
 const socketRooms = new Map(); // socketId -> code
 const timers = new Map(); // code -> timeout (ходы ботов)
-const disconnectTimers = new Map(); // playerId -> timeout (grace на переподключение)
+// Ключ `${room.code}:${playerId}` — один профиль может сидеть в двух комнатах
+// с разных устройств, глобальный ключ по playerId затирал бы чужие таймеры.
+const disconnectTimers = new Map(); // seatKey -> timeout (grace на переподключение)
+
+// Реестр присутствия: какие сокеты принадлежат какому профилю (для инвайтов
+// и online-статуса друзей). Профиль онлайн, если жив хотя бы один его сокет.
+const presence = new Map(); // profileId -> Set<socketId>
+const socketProfile = new Map(); // socketId -> profileId
 
 const MAX_PLAYERS = 4;
 const RECONNECT_GRACE_MS = 8000; // столько ждём игрока после обрыва, прежде чем включить автопилот
@@ -81,10 +94,46 @@ function botName(i) {
   return i === 1 ? 'Компьютер' : `Компьютер ${i}`;
 }
 
-// ID игрока из клиента — стабильный, переживает обновление страницы
-function sanitizeId(id) {
-  const s = String(id || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
-  return s || `u${Math.random().toString(36).slice(2, 10)}`;
+// ID устройства из клиента — стабильный, переживает обновление страницы.
+// Профиль игрока резолвится из устройства в profiles.js (sanitizeDeviceId).
+const sanitizeId = sanitizeDeviceId;
+
+function seatKey(room, playerId) {
+  return `${room.code}:${playerId}`;
+}
+
+// --- Присутствие ---
+function bindPresence(socket, profileId) {
+  const prev = socketProfile.get(socket.id);
+  if (prev && prev !== profileId) {
+    const set = presence.get(prev);
+    if (set) {
+      set.delete(socket.id);
+      if (!set.size) presence.delete(prev);
+    }
+  }
+  socketProfile.set(socket.id, profileId);
+  let set = presence.get(profileId);
+  if (!set) {
+    set = new Set();
+    presence.set(profileId, set);
+  }
+  set.add(socket.id);
+}
+
+function dropPresence(socketId) {
+  const pid = socketProfile.get(socketId);
+  socketProfile.delete(socketId);
+  if (!pid) return;
+  const set = presence.get(pid);
+  if (!set) return;
+  set.delete(socketId);
+  if (!set.size) presence.delete(pid);
+}
+
+function isOnline(profileId) {
+  const set = presence.get(profileId);
+  return !!set && set.size > 0;
 }
 
 function getPlayerBySocket(room, socket) {
@@ -101,10 +150,11 @@ function markDisconnected(room, player) {
   const gp = room.game && room.game.getPlayer(player.id);
   if (gp) gp.connected = false;
 
-  const prev = disconnectTimers.get(player.id);
+  const key = seatKey(room, player.id);
+  const prev = disconnectTimers.get(key);
   if (prev) clearTimeout(prev);
   const t = setTimeout(() => {
-    disconnectTimers.delete(player.id);
+    disconnectTimers.delete(key);
     const r = rooms.get(room.code);
     if (!r) return;
     const p = r.players.find((x) => x.id === player.id);
@@ -128,7 +178,7 @@ function markDisconnected(room, player) {
       }
     }
   }, RECONNECT_GRACE_MS);
-  disconnectTimers.set(player.id, t);
+  disconnectTimers.set(key, t);
 }
 
 function rejoinPlayer(room, player, socket) {
@@ -136,10 +186,11 @@ function rejoinPlayer(room, player, socket) {
   player.connected = true;
   const gp = room.game && room.game.getPlayer(player.id);
   if (gp) gp.connected = true;
-  const prev = disconnectTimers.get(player.id);
+  const key = seatKey(room, player.id);
+  const prev = disconnectTimers.get(key);
   if (prev) {
     clearTimeout(prev);
-    disconnectTimers.delete(player.id);
+    disconnectTimers.delete(key);
   }
 }
 
@@ -150,16 +201,19 @@ function snapshot(room, playerId) {
     status: room.status,
     hostId: room.hostId,
     settings: { ...room.settings },
-    players: room.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      ai: !!p.ai,
-      color: p.color || DEFAULT_COLOR,
-      emoji: p.emoji || DEFAULT_EMOJI,
-      connected: !!p.connected,
-      total: getTotal(p.id),
-      games: getGames(p.id),
-    })),
+    players: room.players.map((p) => {
+      const s = p.ai ? null : getStats(p.id, GAME_RUMMIKUB);
+      return {
+        id: p.id,
+        name: p.name,
+        ai: !!p.ai,
+        color: p.color || DEFAULT_COLOR,
+        emoji: p.emoji || DEFAULT_EMOJI,
+        connected: !!p.connected,
+        total: s ? s.total : 0,
+        games: s ? s.games : 0,
+      };
+    }),
     game: null,
   };
   if (g) {
@@ -188,19 +242,22 @@ function snapshot(room, playerId) {
             };
           }).filter(Boolean)
         : [],
-      players: g.players.map((p) => ({
-        id: p.id,
-        name: p.name,
-        ai: !!p.ai,
-        color: p.color || DEFAULT_COLOR,
-        emoji: p.emoji || DEFAULT_EMOJI,
-        handCount: p.hand.length,
-        melded: p.melded,
-        score: p.score || 0,
-        think: p.think || 0,
-        total: getTotal(p.id),
-        games: getGames(p.id),
-      })),
+      players: g.players.map((p) => {
+        const s = p.ai ? null : getStats(p.id, GAME_RUMMIKUB);
+        return {
+          id: p.id,
+          name: p.name,
+          ai: !!p.ai,
+          color: p.color || DEFAULT_COLOR,
+          emoji: p.emoji || DEFAULT_EMOJI,
+          handCount: p.hand.length,
+          melded: p.melded,
+          score: p.score || 0,
+          think: p.think || 0,
+          total: s ? s.total : 0,
+          games: s ? s.games : 0,
+        };
+      }),
       you: me
         ? { hand: me.hand, melded: me.melded, drew: g.turnDrew, yourTurn: cur.id === me.id }
         : null,
@@ -217,19 +274,25 @@ function emitRoom(room) {
   }
 }
 
-// Начислить очки завершённой партии в общую копилку ровно один раз за игру.
-// Хранится в JSON-файле на сервере (см. players.js) и переживает перезапуск.
+// Начислить итоги завершённой партии в профиль каждого игрока ровно один раз
+// за игру (см. profiles.js, stats.rummikub). Ничья и досрочное завершение
+// (без победителя) в статистику не попадают.
 function settleGame(room) {
   const g = room.game;
   if (!g || g.phase !== 'ended') return;
   if (room.settledSeq === room.gameSeq) return;
   room.settledSeq = room.gameSeq;
+  if (!g.winner) return;
+  const standings = [...g.players].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const placeOf = new Map(standings.map((p, i) => [p.id, i + 1]));
   for (const p of g.players) {
     if (p.ai) continue; // боты в статистику и таблицу лидеров не попадают
-    // «Завершённой» считаем партию с победителем (досрочно прерванная — нет).
-    if (g.winner) addGames(p.id, { name: p.name, color: p.color, emoji: p.emoji });
-    if (!p.score) continue;
-    addScore(p.id, p.score, { name: p.name, color: p.color, emoji: p.emoji });
+    recordResult(GAME_RUMMIKUB, p.id, {
+      score: p.score || 0,
+      won: g.winner.id === p.id,
+      place: placeOf.get(p.id),
+      players: g.players.length,
+    });
   }
 }
 
@@ -293,8 +356,11 @@ function broadcastRoom(room) {
 io.on('connection', (socket) => {
   socket.on('room:create', ({ id, name, addBot, difficulty, color, emoji, touched } = {}, cb) => {
     const code = randCode();
-    const pid = sanitizeId(id);
-    const rec = loginPlayer(pid, { name, color, emoji, touched });
+    // Устройство резолвится в профиль: комнаты и статистика ключуются на профиль,
+    // чтобы человек с разных устройств был одним игроком.
+    const rec = loginPlayer(sanitizeId(id), { name, color, emoji, touched });
+    const pid = rec.id;
+    bindPresence(socket, pid);
     const player = {
       id: pid,
       socketId: socket.id,
@@ -317,7 +383,7 @@ io.on('connection', (socket) => {
     socketRooms.set(socket.id, code);
     socket.join(code);
     if (addBot) addBotToRoom(room, socket);
-    cb?.({ ok: true, snapshot: snapshot(room, pid) });
+    cb?.({ ok: true, snapshot: snapshot(room, pid), profileId: pid });
     broadcastRoom(room);
   });
 
@@ -325,19 +391,21 @@ io.on('connection', (socket) => {
     const room = rooms.get(String(code || '').trim().toUpperCase());
     if (!room) return cb?.({ ok: false, error: 'Комната не найдена' });
     if (room.status !== 'lobby') return cb?.({ ok: false, error: 'Игра уже началась' });
-    const pid = sanitizeId(id);
-    const rec = loginPlayer(pid, { name, color, emoji, touched });
+    const rec = loginPlayer(sanitizeId(id), { name, color, emoji, touched });
+    const pid = rec.id;
+    bindPresence(socket, pid);
 
     const existing = room.players.find((p) => p.id === pid && !p.ai);
     if (existing) {
-      // Игрок с таким же id уже в комнате (например, обновил страницу) — просто переподключаем
+      // Игрок с таким же профилем уже в комнате (например, зашёл с другого
+      // устройства или обновил страницу) — просто переподключаем
       existing.name = rec.name;
       existing.color = rec.color;
       existing.emoji = rec.emoji;
       rejoinPlayer(room, existing, socket);
       socketRooms.set(socket.id, room.code);
       socket.join(room.code);
-      cb?.({ ok: true, snapshot: snapshot(room, existing.id) });
+      cb?.({ ok: true, snapshot: snapshot(room, existing.id), profileId: existing.id });
       broadcastRoom(room);
       return;
     }
@@ -356,7 +424,7 @@ io.on('connection', (socket) => {
     room.players.push(player);
     socketRooms.set(socket.id, room.code);
     socket.join(room.code);
-    cb?.({ ok: true, snapshot: snapshot(room, pid) });
+    cb?.({ ok: true, snapshot: snapshot(room, pid), profileId: pid });
     broadcastRoom(room);
   });
 
@@ -364,18 +432,18 @@ io.on('connection', (socket) => {
   socket.on('room:rejoin', ({ code, id, name, color, emoji, touched } = {}, cb) => {
     const room = rooms.get(String(code || '').trim().toUpperCase());
     if (!room) return cb?.({ ok: false, error: 'Комната не найдена' });
-    const pid = sanitizeId(id);
+    const rec = loginPlayer(sanitizeId(id), { name, color, emoji, touched });
+    const pid = rec.id;
+    bindPresence(socket, pid);
     const player = room.players.find((p) => p.id === pid && !p.ai);
     if (!player) return cb?.({ ok: false, error: 'Сессия не найдена' });
-
-    const rec = loginPlayer(pid, { name, color, emoji, touched });
     player.name = rec.name;
     player.color = rec.color;
     player.emoji = rec.emoji;
     rejoinPlayer(room, player, socket);
     socketRooms.set(socket.id, room.code);
     socket.join(room.code);
-    cb?.({ ok: true, snapshot: snapshot(room, player.id) });
+    cb?.({ ok: true, snapshot: snapshot(room, player.id), profileId: player.id });
     broadcastRoom(room);
     scheduleAi(room);
   });
@@ -473,7 +541,81 @@ io.on('connection', (socket) => {
   });
 
   socket.on('leaderboard:get', (cb) => {
-    cb?.({ ok: true, leaderboard: leaderboard(50) });
+    cb?.({ ok: true, leaderboard: leaderboard(GAME_RUMMIKUB, 50) });
+  });
+
+  // --- Профили ---
+
+  // Полный взгляд на свой профиль (статистика, устройства, друзья).
+  // Заодно гарантируем существование профиля устройства.
+  socket.on('profile:get', ({ id, name, color, emoji, touched } = {}, cb) => {
+    const rec = loginPlayer(sanitizeId(id), { name, color, emoji, touched });
+    bindPresence(socket, rec.id);
+    cb?.({ ok: true, profile: profileView(rec.id), profileId: rec.id });
+  });
+
+  // Код привязки: введите его на другом устройстве, чтобы играть под этим профилем.
+  socket.on('profile:code:create', ({ id } = {}, cb) => {
+    const rec = loginPlayer(sanitizeId(id), {});
+    const info = createLinkCode(rec.id);
+    if (!info) return cb?.({ ok: false, error: 'Не удалось создать код' });
+    cb?.({ ok: true, ...info });
+  });
+
+  // Привязать это устройство к чужому профилю по коду.
+  socket.on('profile:link', ({ id, code } = {}, cb) => {
+    const deviceId = sanitizeId(id);
+    const res = linkDevice(deviceId, code);
+    if (res.error) return cb?.({ ok: false, error: res.error });
+    bindPresence(socket, res.profile.id);
+    cb?.({ ok: true, profile: res.profile, profileId: res.profile.id });
+  });
+
+  // Отвязать устройство от профиля.
+  socket.on('profile:unlink', ({ id, deviceId } = {}, cb) => {
+    const pid = resolveDevice(sanitizeId(id));
+    const res = unlinkDevice(String(deviceId || ''));
+    if (res.error) return cb?.(res);
+    cb?.({ ok: true, profile: profileView(pid) });
+  });
+
+  socket.on('profile:friends:add', ({ id, friendId } = {}, cb) => {
+    const rec = loginPlayer(sanitizeId(id), {});
+    const res = friendsAdd(rec.id, String(friendId || ''));
+    if (res.error) return cb?.(res);
+    cb?.({ ok: true, profile: profileView(rec.id) });
+  });
+
+  socket.on('profile:friends:remove', ({ id, friendId } = {}, cb) => {
+    const pid = resolveDevice(sanitizeId(id));
+    const res = friendsRemove(pid, String(friendId || ''));
+    if (res.error) return cb?.(res);
+    cb?.({ ok: true, profile: profileView(pid) });
+  });
+
+  socket.on('profile:friends:list', ({ id } = {}, cb) => {
+    const pid = resolveDevice(sanitizeId(id));
+    bindPresence(socket, pid);
+    cb?.({
+      ok: true,
+      friends: friendsRecords(pid).map((f) => ({ ...f, online: isOnline(f.id), me: f.id === pid })),
+    });
+  });
+
+  // Пригласить друга в свою комнату (только хост, только лобби).
+  socket.on('room:invite', ({ toPid } = {}, cb) => {
+    const room = rooms.get(socketRooms.get(socket.id));
+    const me = room && getPlayerBySocket(room, socket);
+    if (!room || !me) return cb?.({ ok: false, error: 'Комната не найдена' });
+    if (room.hostId !== me.id) return cb?.({ ok: false, error: 'Только хост может приглашать' });
+    if (room.status !== 'lobby') return cb?.({ ok: false, error: 'Приглашать можно только в лобби' });
+    const targetPid = resolveDevice(String(toPid || ''));
+    if (targetPid === me.id) return cb?.({ ok: false, error: 'Вы уже в этой комнате' });
+    const sockets = presence.get(targetPid);
+    if (!sockets || !sockets.size) return cb?.({ ok: false, error: 'Игрок не в сети' });
+    const from = { name: me.name, color: me.color, emoji: me.emoji };
+    for (const sid of sockets) io.sockets.sockets.get(sid)?.emit('invite', { from, code: room.code });
+    cb?.({ ok: true });
   });
 
   socket.on('room:leave', (cb) => {
@@ -500,10 +642,11 @@ io.on('connection', (socket) => {
       clearPlayerPresence(player);
       const gp = room.game && room.game.getPlayer(player.id);
       if (gp) gp.connected = false;
-      const prev = disconnectTimers.get(player.id);
+      const key = seatKey(room, player.id);
+      const prev = disconnectTimers.get(key);
       if (prev) {
         clearTimeout(prev);
-        disconnectTimers.delete(player.id);
+        disconnectTimers.delete(key);
       }
       if (room.players.filter((p) => p.connected).length === 0) {
         clearTimer(room);
@@ -518,6 +661,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    dropPresence(socket.id);
     const code = socketRooms.get(socket.id);
     socketRooms.delete(socket.id);
     if (!code) return;
